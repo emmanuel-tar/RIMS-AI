@@ -1,12 +1,12 @@
 
 import React, { useState } from 'react';
-import { Save, Building, MapPin, Database, Download, Plus, Trash2 } from 'lucide-react';
+import { Save, Building, MapPin, Database, Download, Plus, Trash2, Cloud, Wifi, WifiOff, Key, Globe, LayoutGrid } from 'lucide-react';
 import { useInventory } from '../context/ShopContext';
 import { Location } from '../types';
 
 const SettingsView: React.FC = () => {
-  const { settings, updateSettings, locations, addLocation, exportData } = useInventory();
-  const [activeTab, setActiveTab] = useState<'general' | 'locations' | 'data'>('general');
+  const { settings, updateSettings, updateCloudSettings, locations, addLocation, exportData, syncStatus, triggerSync } = useInventory();
+  const [activeTab, setActiveTab] = useState<'general' | 'locations' | 'cloud' | 'data'>('general');
 
   // Local state for new location form
   const [newLocName, setNewLocName] = useState('');
@@ -15,8 +15,6 @@ const SettingsView: React.FC = () => {
 
   const handleGeneralSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // In a real app, this might trigger an API call. 
-    // Here, context updates are immediate, so we just show visual feedback if needed.
     alert("Settings saved successfully.");
   };
 
@@ -36,32 +34,62 @@ const SettingsView: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-        <h2 className="text-xl font-bold text-slate-800">System Settings</h2>
-        <p className="text-sm text-slate-500">Configure your store profile, locations, and data preferences.</p>
+      <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+           <h2 className="text-xl font-bold text-slate-800">System Settings</h2>
+           <p className="text-sm text-slate-500">Configure your store profile, locations, and data preferences.</p>
+        </div>
         
-        {/* Tabs */}
-        <div className="flex gap-4 mt-6 border-b border-slate-200">
+        {/* Marketplace Shortcut */}
+        <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-3 flex items-center gap-3">
+           <div className="bg-indigo-100 p-2 rounded-full text-indigo-600">
+             <LayoutGrid size={18} />
+           </div>
+           <div>
+              <p className="text-xs font-bold text-indigo-900 uppercase">Need more features?</p>
+              <p className="text-xs text-indigo-600">Visit the Marketplace to enable modules.</p>
+           </div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="bg-white p-2 rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
+        <div className="flex gap-4">
            <button 
              onClick={() => setActiveTab('general')}
-             className={`pb-3 px-1 text-sm font-medium transition-colors border-b-2 ${
-               activeTab === 'general' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'
+             className={`pb-3 px-4 pt-3 text-sm font-medium transition-colors border-b-2 ${
+               activeTab === 'general' ? 'border-indigo-600 text-indigo-600 bg-indigo-50/50' : 'border-transparent text-slate-500 hover:text-slate-700'
              }`}
            >
              General Profile
            </button>
-           <button 
-             onClick={() => setActiveTab('locations')}
-             className={`pb-3 px-1 text-sm font-medium transition-colors border-b-2 ${
-               activeTab === 'locations' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'
-             }`}
-           >
-             Locations
-           </button>
+           
+           {settings.features.MULTI_LOCATION && (
+             <button 
+               onClick={() => setActiveTab('locations')}
+               className={`pb-3 px-4 pt-3 text-sm font-medium transition-colors border-b-2 ${
+                 activeTab === 'locations' ? 'border-indigo-600 text-indigo-600 bg-indigo-50/50' : 'border-transparent text-slate-500 hover:text-slate-700'
+               }`}
+             >
+               Locations
+             </button>
+           )}
+
+           {settings.features.CLOUD && (
+             <button 
+               onClick={() => setActiveTab('cloud')}
+               className={`pb-3 px-4 pt-3 text-sm font-medium transition-colors border-b-2 ${
+                 activeTab === 'cloud' ? 'border-indigo-600 text-indigo-600 bg-indigo-50/50' : 'border-transparent text-slate-500 hover:text-slate-700'
+               }`}
+             >
+               Cloud & Network
+             </button>
+           )}
+
            <button 
              onClick={() => setActiveTab('data')}
-             className={`pb-3 px-1 text-sm font-medium transition-colors border-b-2 ${
-               activeTab === 'data' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'
+             className={`pb-3 px-4 pt-3 text-sm font-medium transition-colors border-b-2 ${
+               activeTab === 'data' ? 'border-indigo-600 text-indigo-600 bg-indigo-50/50' : 'border-transparent text-slate-500 hover:text-slate-700'
              }`}
            >
              Data Management
@@ -128,7 +156,7 @@ const SettingsView: React.FC = () => {
         )}
 
         {/* Locations Tab */}
-        {activeTab === 'locations' && (
+        {activeTab === 'locations' && settings.features.MULTI_LOCATION && (
           <div className="p-6">
              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                
@@ -198,6 +226,103 @@ const SettingsView: React.FC = () => {
 
              </div>
           </div>
+        )}
+
+        {/* Cloud Tab */}
+        {activeTab === 'cloud' && settings.features.CLOUD && (
+           <div className="p-6 max-w-2xl space-y-8">
+              <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-lg flex items-start gap-4">
+                 <div className="bg-indigo-100 p-2 rounded-full text-indigo-600">
+                    <Cloud size={24} />
+                 </div>
+                 <div>
+                    <h3 className="font-bold text-indigo-900">Head Office Connection</h3>
+                    <p className="text-sm text-indigo-700 mt-1">
+                       Connect this branch to your central RIMS Cloud server to sync inventory, sales, and purchasing data in real-time.
+                    </p>
+                 </div>
+              </div>
+
+              <div className="space-y-4">
+                 <div className="flex items-center gap-3 py-2">
+                    <span className="text-sm font-medium text-slate-700">Connection Status:</span>
+                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${
+                       syncStatus === 'CONNECTED' ? 'bg-green-100 text-green-700' :
+                       syncStatus === 'SYNCING' ? 'bg-blue-100 text-blue-700' :
+                       'bg-red-100 text-red-700'
+                    }`}>
+                       {syncStatus === 'CONNECTED' ? <Wifi size={14} className="mr-1" /> : <WifiOff size={14} className="mr-1" />}
+                       {syncStatus}
+                    </span>
+                    {settings.cloud?.lastSync && (
+                       <span className="text-xs text-slate-400">Last synced: {new Date(settings.cloud.lastSync).toLocaleTimeString()}</span>
+                    )}
+                 </div>
+
+                 <div className="space-y-4 pt-4 border-t border-slate-100">
+                    <div>
+                       <label className="block text-sm font-medium text-slate-700 mb-1">API Endpoint</label>
+                       <div className="relative">
+                          <Globe size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                          <input 
+                             type="text" 
+                             value={settings.cloud?.apiEndpoint || ''}
+                             onChange={(e) => updateCloudSettings({ apiEndpoint: e.target.value })}
+                             className="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500"
+                             placeholder="https://api.rims-cloud.com/v1"
+                          />
+                       </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                       <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Store ID</label>
+                          <input 
+                             type="text" 
+                             value={settings.cloud?.storeId || ''}
+                             onChange={(e) => updateCloudSettings({ storeId: e.target.value })}
+                             className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500"
+                             placeholder="STORE-001"
+                          />
+                       </div>
+                       <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">API Key</label>
+                          <div className="relative">
+                             <Key size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                             <input 
+                                type="password" 
+                                value={settings.cloud?.apiKey || ''}
+                                onChange={(e) => updateCloudSettings({ apiKey: e.target.value })}
+                                className="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500"
+                                placeholder="••••••••••••"
+                             />
+                          </div>
+                       </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-2 mt-2">
+                       <input 
+                          type="checkbox" 
+                          id="autoSync"
+                          checked={settings.cloud?.enabled || false}
+                          onChange={(e) => updateCloudSettings({ enabled: e.target.checked })}
+                          className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                       />
+                       <label htmlFor="autoSync" className="text-sm text-slate-700">Enable Automatic Synchronization</label>
+                    </div>
+                 </div>
+
+                 <div className="pt-4 flex gap-3">
+                    <button 
+                       onClick={triggerSync}
+                       disabled={!settings.cloud?.enabled || syncStatus === 'SYNCING'}
+                       className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                       {syncStatus === 'SYNCING' ? 'Syncing...' : 'Test Connection & Sync'}
+                    </button>
+                 </div>
+              </div>
+           </div>
         )}
 
         {/* Data Tab */}

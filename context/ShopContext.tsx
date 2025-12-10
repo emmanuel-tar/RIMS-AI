@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useState, ReactNode, useMemo, useEffect } from 'react';
-import { InventoryItem, Transaction, DashboardStats, Location, Supplier, PurchaseOrder, StoreSettings, Employee, Customer } from '../types';
+import { InventoryItem, Transaction, DashboardStats, Location, Supplier, PurchaseOrder, StoreSettings, Employee, Customer, CloudSettings, SyncStatus, FeatureModule } from '../types';
 import { MOCK_INVENTORY, MOCK_LOCATIONS, MOCK_SUPPLIERS, MOCK_EMPLOYEES, MOCK_CUSTOMERS } from '../constants';
 
 interface InventoryContextType {
@@ -13,7 +13,20 @@ interface InventoryContextType {
   customers: Customer[];
   stats: DashboardStats;
   settings: StoreSettings;
+  currentUser: Employee | null;
+  
+  // Cloud & Sync
+  syncStatus: SyncStatus;
+  triggerSync: () => Promise<void>;
+  updateCloudSettings: (settings: Partial<CloudSettings>) => void;
+  
+  // Auth
+  login: (email: string) => boolean;
+  logout: () => void;
+
   updateSettings: (settings: Partial<StoreSettings>) => void;
+  toggleFeature: (feature: FeatureModule, isEnabled: boolean) => void;
+  
   addLocation: (location: Omit<Location, 'id'>) => void;
   addItem: (item: Omit<InventoryItem, 'id' | 'lastUpdated' | 'stockQuantity' | 'stockDistribution'>, initialStock: number, locationId: string) => void;
   updateItem: (id: string, updates: Partial<InventoryItem>) => void;
@@ -21,7 +34,7 @@ interface InventoryContextType {
   adjustStock: (id: string, locationId: string, quantityChange: number, reason: string) => void;
   transferStock: (itemId: string, fromLocationId: string, toLocationId: string, quantity: number) => void;
   commitAudit: (locationId: string, adjustments: { itemId: string, systemQty: number, countedQty: number }[]) => void;
-  processSale: (locationId: string, items: { itemId: string, quantity: number }[], customerId?: string, discount?: number) => void;
+  processSale: (locationId: string, items: { itemId: string, quantity: number }[], customerId?: string, discount?: number, pointsRedeemed?: number) => Transaction;
   
   // Suppliers & POs
   addSupplier: (supplier: Omit<Supplier, 'id'>) => void;
@@ -56,20 +69,62 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [employees, setEmployees] = useState<Employee[]>(MOCK_EMPLOYEES);
   const [customers, setCustomers] = useState<Customer[]>(MOCK_CUSTOMERS);
+  const [currentUser, setCurrentUser] = useState<Employee | null>(null);
   
+  // Cloud State
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('CONNECTED');
+
   const [searchQuery, setSearchQuery] = useState('');
   
   const [settings, setSettings] = useState<StoreSettings>({
     storeName: 'RIMS Retail',
     currencySymbol: '$',
     taxRate: 0.08,
-    supportEmail: 'admin@rims.local'
+    supportEmail: 'admin@rims.local',
+    loyaltyEnabled: true,
+    loyaltyEarnRate: 1, // $1 = 1 point
+    loyaltyRedeemRate: 0.01, // 1 point = $0.01
+    cloud: {
+      enabled: false,
+      apiEndpoint: 'https://api.rims-cloud.com/v1',
+      storeId: '',
+      apiKey: ''
+    },
+    features: {
+      CRM: true,
+      TEAM: true,
+      SUPPLIERS: true,
+      MULTI_LOCATION: true,
+      CLOUD: false,
+      AI_ASSISTANT: true,
+      REPORTS: true
+    }
   });
 
   // Persistence effect
   useEffect(() => {
     localStorage.setItem('rims_inventory', JSON.stringify(inventory));
   }, [inventory]);
+
+  // Try to restore session
+  useEffect(() => {
+    const savedUser = localStorage.getItem('rims_user');
+    if (savedUser) {
+      setCurrentUser(JSON.parse(savedUser));
+    }
+  }, []);
+
+  // Monitor Online Status
+  useEffect(() => {
+    const handleOnline = () => setSyncStatus('CONNECTED');
+    const handleOffline = () => setSyncStatus('DISCONNECTED');
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   const stats = useMemo(() => {
     return {
@@ -80,6 +135,21 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     };
   }, [inventory]);
 
+  const login = (email: string): boolean => {
+    const user = employees.find(e => e.email.toLowerCase() === email.toLowerCase() && e.status === 'ACTIVE');
+    if (user) {
+      setCurrentUser(user);
+      localStorage.setItem('rims_user', JSON.stringify(user));
+      return true;
+    }
+    return false;
+  };
+
+  const logout = () => {
+    setCurrentUser(null);
+    localStorage.removeItem('rims_user');
+  };
+
   const getPriceForLocation = (item: InventoryItem, locationId: string): number => {
     if (item.locationPrices && item.locationPrices[locationId]) {
       return item.locationPrices[locationId];
@@ -89,6 +159,34 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   const updateSettings = (updates: Partial<StoreSettings>) => {
     setSettings(prev => ({ ...prev, ...updates }));
+  };
+
+  const toggleFeature = (feature: FeatureModule, isEnabled: boolean) => {
+    setSettings(prev => ({
+      ...prev,
+      features: {
+        ...prev.features,
+        [feature]: isEnabled
+      }
+    }));
+  };
+
+  const updateCloudSettings = (updates: Partial<CloudSettings>) => {
+     setSettings(prev => ({
+       ...prev,
+       cloud: { ...(prev.cloud || { enabled: false, apiEndpoint: '', storeId: '', apiKey: '' }), ...updates }
+     }));
+  };
+
+  const triggerSync = async () => {
+    if (!settings.cloud?.enabled) return;
+    setSyncStatus('SYNCING');
+    
+    // Simulate Network Request
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    updateCloudSettings({ lastSync: new Date().toISOString() });
+    setSyncStatus('CONNECTED');
   };
 
   const addLocation = (locationData: Omit<Location, 'id'>) => {
@@ -126,7 +224,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       quantity: initialStock,
       reason: 'Initial Stock',
       timestamp: new Date().toISOString(),
-      userName: 'Admin',
+      userName: currentUser?.name || 'Admin',
       locationId: locationId
     };
     setTransactions(prev => [transaction, ...prev]);
@@ -168,7 +266,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       quantity: Math.abs(quantityChange),
       reason,
       timestamp: new Date().toISOString(),
-      userName: 'Admin',
+      userName: currentUser?.name || 'Admin',
       locationId: locationId
     };
     setTransactions(prev => [transaction, ...prev]);
@@ -202,7 +300,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       quantity: quantity,
       reason: 'Inter-branch Transfer',
       timestamp: new Date().toISOString(),
-      userName: 'Admin',
+      userName: currentUser?.name || 'Admin',
       locationId: fromLocationId,
       toLocationId: toLocationId
     };
@@ -239,14 +337,20 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         quantity: Math.abs(adj.countedQty - adj.systemQty),
         reason: `Audit Correction (System: ${adj.systemQty}, Counted: ${adj.countedQty})`,
         timestamp,
-        userName: 'Admin',
+        userName: currentUser?.name || 'Admin',
         locationId: locationId
       }));
 
     setTransactions(prev => [...newTransactions, ...prev]);
   };
 
-  const processSale = (locationId: string, items: { itemId: string, quantity: number }[], customerId?: string, discountPercent?: number) => {
+  const processSale = (
+    locationId: string, 
+    items: { itemId: string, quantity: number }[], 
+    customerId?: string, 
+    discountPercent?: number, 
+    pointsRedeemed?: number
+  ): Transaction => {
     const timestamp = new Date().toISOString();
     let totalSaleValue = 0;
 
@@ -273,15 +377,23 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       return item;
     }));
 
-    // Generate Transactions
+    // Calculate Financials for Loyalty
+    const discountAmount = discountPercent ? totalSaleValue * (discountPercent / 100) : 0;
+    const redemptionValue = pointsRedeemed ? pointsRedeemed * (settings.loyaltyRedeemRate || 0.01) : 0;
+    const finalTotal = Math.max(0, totalSaleValue - discountAmount - redemptionValue);
+    
+    // Generate Master Transaction ID
+    const masterTxId = `TX-${Date.now()}`;
+
+    // Generate Transactions (Audit Trail)
     const newTransactions: Transaction[] = items.map(item => ({
-      id: Date.now() + Math.random().toString(),
+      id: masterTxId,
       type: 'SALE',
       itemId: item.itemId,
       quantity: item.quantity,
-      reason: `POS Transaction ${discountPercent ? `(${discountPercent}% off)` : ''}`,
+      reason: `POS Sale ${discountPercent ? `(-${discountPercent}%)` : ''}`,
       timestamp,
-      userName: 'Staff',
+      userName: currentUser?.name || 'Staff',
       locationId: locationId,
       customerId
     }));
@@ -290,19 +402,28 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     // Update Customer Loyalty
     if (customerId) {
-      // Calculate final sale value after discount for points
-      const discountedValue = discountPercent ? totalSaleValue * (1 - discountPercent / 100) : totalSaleValue;
-      const pointsEarned = Math.floor(discountedValue); // 1 point per dollar
+      const pointsEarned = Math.floor(finalTotal / (settings.loyaltyEarnRate || 1));
       
       setCustomers(prev => prev.map(c => 
         c.id === customerId ? {
           ...c,
-          totalSpent: c.totalSpent + discountedValue,
-          loyaltyPoints: c.loyaltyPoints + pointsEarned,
+          totalSpent: c.totalSpent + finalTotal,
+          loyaltyPoints: Math.max(0, c.loyaltyPoints - (pointsRedeemed || 0) + pointsEarned),
           lastVisit: timestamp
         } : c
       ));
     }
+
+    // Return a summary transaction object for the receipt
+    return {
+      id: masterTxId,
+      type: 'SALE',
+      itemId: 'MULTI', // Placeholder
+      quantity: items.length,
+      timestamp,
+      userName: currentUser?.name || 'Staff',
+      locationId
+    };
   };
 
   // --- Suppliers & POs ---
@@ -343,7 +464,6 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     po.items.forEach(poItem => {
        const existingItem = inventory.find(i => i.id === poItem.itemId);
        if (existingItem) {
-         // Use adjustStock to handle logic and transaction creation
          adjustStock(poItem.itemId, locationId, poItem.quantity, `PO Received: ${po.id}`);
        }
     });
@@ -405,7 +525,14 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       customers,
       stats,
       settings,
+      currentUser,
+      syncStatus,
+      triggerSync,
+      updateCloudSettings,
+      login,
+      logout,
       updateSettings,
+      toggleFeature,
       addLocation,
       addItem,
       updateItem,

@@ -14,11 +14,28 @@ export interface Location {
   address: string;
 }
 
+export interface CloudSettings {
+  enabled: boolean;
+  apiEndpoint: string;
+  storeId: string;
+  apiKey: string;
+  lastSync?: string;
+}
+
+export type SyncStatus = 'CONNECTED' | 'DISCONNECTED' | 'SYNCING' | 'ERROR';
+
+export type FeatureModule = 'CRM' | 'TEAM' | 'SUPPLIERS' | 'MULTI_LOCATION' | 'CLOUD' | 'AI_ASSISTANT' | 'REPORTS';
+
 export interface StoreSettings {
   storeName: string;
   currencySymbol: string;
   taxRate: number; // e.g. 0.08 for 8%
   supportEmail: string;
+  loyaltyEnabled?: boolean;
+  loyaltyEarnRate?: number; // Spend amount to earn 1 point
+  loyaltyRedeemRate?: number; // Value of 1 point
+  cloud?: CloudSettings;
+  features: Record<FeatureModule, boolean>;
 }
 
 export interface InventoryItem {

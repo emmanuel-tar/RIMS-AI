@@ -1,27 +1,40 @@
 
 import React, { useState, useMemo } from 'react';
-import { Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, CheckCircle, PackageX, User, Users, Tag } from 'lucide-react';
+import { Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, CheckCircle, PackageX, User, Tag, X, Receipt } from 'lucide-react';
 import { useInventory } from '../context/ShopContext';
-import { InventoryItem, Category } from '../types';
+import { InventoryItem, Category, Transaction } from '../types';
+import ReceiptModal from './ReceiptModal';
 
 interface CartItem extends InventoryItem {
   cartQty: number;
 }
 
 const POSView: React.FC<{ locationId: string }> = ({ locationId }) => {
-  const { inventory, locations, processSale, customers, getPriceForLocation } = useInventory();
+  const { inventory, locations, processSale, customers, getPriceForLocation, settings } = useInventory();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState<string>('All');
-  const [showSuccess, setShowSuccess] = useState(false);
   
   // Checkout State
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
   const [discountPercent, setDiscountPercent] = useState<number>(0);
+  const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
+  
+  // Receipt State
+  const [isReceiptOpen, setIsReceiptOpen] = useState(false);
+  const [lastTransaction, setLastTransaction] = useState<{
+    id: string;
+    items: { name: string; sku: string; qty: number; price: number }[];
+    subtotal: number;
+    discount: number;
+    total: number;
+    customer?: string;
+  } | null>(null);
 
   // If locationId is 'all', default to the first location for sales logic
   const activeLocationId = locationId === 'all' ? locations[0]?.id : locationId;
   const activeLocationName = locations.find(l => l.id === activeLocationId)?.name || 'Unknown Location';
+  const selectedCustomer = customers.find(c => c.id === selectedCustomerId);
 
   // Filter products
   const products = useMemo(() => {
@@ -64,24 +77,44 @@ const POSView: React.FC<{ locationId: string }> = ({ locationId }) => {
   
   const discountAmount = (subtotal * discountPercent) / 100;
   const total = subtotal - discountAmount;
-  const loyaltyPointsEarned = Math.floor(total); // 1 point per $1
+  const loyaltyPointsEarned = Math.floor(total / (settings.loyaltyEarnRate || 1));
 
-  const handleCheckout = () => {
+  const finalizeSale = (paymentMethod: 'CARD' | 'CASH') => {
     if (cart.length === 0) return;
     
-    processSale(
+    // Create Receipt Data Snapshot
+    const receiptData = {
+      id: `TX-${Date.now()}`, // Temporary ID until context returns one, but processSale returns Transaction
+      items: cart.map(i => ({
+        name: i.name,
+        sku: i.sku,
+        qty: i.cartQty,
+        price: getPriceForLocation(i, activeLocationId)
+      })),
+      subtotal,
+      discount: discountAmount,
+      total,
+      customer: selectedCustomer?.name
+    };
+
+    const transaction = processSale(
       activeLocationId,
       cart.map(i => ({ itemId: i.id, quantity: i.cartQty })),
       selectedCustomerId || undefined,
       discountPercent > 0 ? discountPercent : undefined
     );
     
-    // Reset
+    receiptData.id = transaction.id;
+    setLastTransaction(receiptData);
+    
+    // Close modal & Reset
+    setIsCheckoutModalOpen(false);
     setCart([]);
     setSelectedCustomerId('');
     setDiscountPercent(0);
-    setShowSuccess(true);
-    setTimeout(() => setShowSuccess(false), 2000);
+    
+    // Open Receipt
+    setIsReceiptOpen(true);
   };
 
   return (
@@ -268,31 +301,103 @@ const POSView: React.FC<{ locationId: string }> = ({ locationId }) => {
               </div>
            </div>
            
-           <div className="grid grid-cols-2 gap-3 pt-2">
+           <div className="pt-2">
              <button 
-               onClick={handleCheckout}
+               onClick={() => setIsCheckoutModalOpen(true)}
                disabled={cart.length === 0}
-               className="flex items-center justify-center gap-2 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-bold transition-colors"
+               className="w-full flex items-center justify-center gap-2 py-4 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-bold transition-colors shadow-lg"
              >
-               <CreditCard size={18} /> Card
-             </button>
-             <button 
-               onClick={handleCheckout}
-               disabled={cart.length === 0}
-               className="flex items-center justify-center gap-2 py-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-bold transition-colors"
-             >
-               <Banknote size={18} /> Cash
+               Proceed to Checkout
              </button>
            </div>
         </div>
 
-        {/* Success Overlay */}
-        {showSuccess && (
-          <div className="absolute inset-0 bg-white/90 backdrop-blur-sm z-10 flex flex-col items-center justify-center animate-in fade-in zoom-in duration-200">
-             <CheckCircle className="w-16 h-16 text-green-500 mb-4" />
-             <h3 className="text-2xl font-bold text-slate-900">Sale Completed!</h3>
-             <p className="text-slate-500">Transaction recorded successfully.</p>
+        {/* Checkout Confirmation Modal */}
+        {isCheckoutModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setIsCheckoutModalOpen(false)} />
+            <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh]">
+              <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                  <Receipt className="text-indigo-600" size={20} />
+                  Review Order
+                </h2>
+                <button onClick={() => setIsCheckoutModalOpen(false)} className="p-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-200">
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-6 flex-1 overflow-y-auto">
+                {/* Summary Card */}
+                <div className="bg-slate-50 rounded-lg p-4 border border-slate-200 space-y-3">
+                   <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">Customer</span>
+                      <span className="font-medium text-slate-900">{selectedCustomer?.name || 'Walk-in Customer'}</span>
+                   </div>
+                   <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">Items</span>
+                      <span className="font-medium text-slate-900">{cart.reduce((a, b) => a + b.cartQty, 0)} units</span>
+                   </div>
+                   {discountPercent > 0 && (
+                     <div className="flex justify-between text-sm text-green-600">
+                        <span>Discount</span>
+                        <span>{discountPercent}% (-${discountAmount.toFixed(2)})</span>
+                     </div>
+                   )}
+                   <div className="border-t border-slate-200 pt-3 flex justify-between items-end">
+                      <span className="text-slate-600 font-medium">Total Payable</span>
+                      <span className="text-2xl font-bold text-slate-900">${total.toFixed(2)}</span>
+                   </div>
+                </div>
+
+                {/* Items List (Collapsed) */}
+                <div>
+                   <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Order Details</h3>
+                   <div className="space-y-2 border border-slate-100 rounded-lg p-3 max-h-40 overflow-y-auto">
+                      {cart.map(item => (
+                        <div key={item.id} className="flex justify-between text-sm">
+                           <span className="text-slate-600 truncate flex-1 pr-4">{item.cartQty}x {item.name}</span>
+                           <span className="text-slate-900 font-medium">
+                             ${(getPriceForLocation(item, activeLocationId) * item.cartQty).toFixed(2)}
+                           </span>
+                        </div>
+                      ))}
+                   </div>
+                </div>
+              </div>
+
+              <div className="p-4 bg-slate-50 border-t border-slate-100 grid grid-cols-2 gap-3">
+                 <button 
+                   onClick={() => finalizeSale('CARD')}
+                   className="flex flex-col items-center justify-center gap-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold transition-colors"
+                 >
+                   <CreditCard size={20} />
+                   <span>Pay Card</span>
+                 </button>
+                 <button 
+                   onClick={() => finalizeSale('CASH')}
+                   className="flex flex-col items-center justify-center gap-1 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold transition-colors"
+                 >
+                   <Banknote size={20} />
+                   <span>Pay Cash</span>
+                 </button>
+              </div>
+            </div>
           </div>
+        )}
+
+        {/* Receipt Modal */}
+        {lastTransaction && (
+          <ReceiptModal 
+            isOpen={isReceiptOpen}
+            onClose={() => setIsReceiptOpen(false)}
+            transactionId={lastTransaction.id}
+            cartItems={lastTransaction.items}
+            subtotal={lastTransaction.subtotal}
+            discount={lastTransaction.discount}
+            total={lastTransaction.total}
+            customerName={lastTransaction.customer}
+          />
         )}
       </div>
     </div>

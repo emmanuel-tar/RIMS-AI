@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Edit2, Trash2, AlertCircle, TrendingUp, TrendingDown, ArrowRightLeft } from 'lucide-react';
+import { Edit2, Trash2, AlertCircle, TrendingUp, TrendingDown, ArrowRightLeft, Tag } from 'lucide-react';
 import { InventoryItem } from '../types';
 import { useInventory } from '../context/ShopContext';
 
@@ -12,15 +12,13 @@ interface InventoryTableProps {
 }
 
 const InventoryTable: React.FC<InventoryTableProps> = ({ onEdit, onAdjust, onTransfer, selectedLocationId }) => {
-  const { inventory, deleteItem, searchQuery, locations } = useInventory();
+  const { inventory, deleteItem, searchQuery, locations, getPriceForLocation } = useInventory();
 
   const filteredItems = inventory.filter(item => 
     item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
     item.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
     item.category.toLowerCase().includes(searchQuery.toLowerCase())
   );
-
-  const getLocationName = (id: string) => locations.find(l => l.id === id)?.name || 'Unknown';
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -46,6 +44,9 @@ const InventoryTable: React.FC<InventoryTableProps> = ({ onEdit, onAdjust, onTra
                 : (item.stockDistribution[selectedLocationId] || 0);
 
               const isLowStock = stockToShow <= item.lowStockThreshold;
+              
+              const currentPrice = getPriceForLocation(item, selectedLocationId === 'all' ? locations[0]?.id : selectedLocationId);
+              const hasPriceOverride = selectedLocationId !== 'all' && item.locationPrices?.[selectedLocationId];
 
               return (
                 <tr key={item.id} className="hover:bg-slate-50 transition-colors">
@@ -77,11 +78,20 @@ const InventoryTable: React.FC<InventoryTableProps> = ({ onEdit, onAdjust, onTra
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm text-slate-600">
-                    ${item.sellingPrice.toFixed(2)}
-                    <span className="block text-xs text-slate-400">Cost: ${item.costPrice.toFixed(2)}</span>
+                    <div className="flex flex-col items-end">
+                      <span className="flex items-center gap-1">
+                        ${currentPrice.toFixed(2)}
+                        {hasPriceOverride && (
+                          <span title="Custom Price Override Active" className="bg-amber-100 text-amber-700 p-0.5 rounded">
+                            <Tag size={10} />
+                          </span>
+                        )}
+                      </span>
+                      <span className="block text-xs text-slate-400">Cost: ${item.costPrice.toFixed(2)}</span>
+                    </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-semibold text-slate-900">
-                    ${(item.sellingPrice * stockToShow).toFixed(2)}
+                    ${(currentPrice * stockToShow).toFixed(2)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     <div className="flex items-center justify-end gap-2">

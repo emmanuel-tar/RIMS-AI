@@ -1,11 +1,19 @@
+
 import React from 'react';
 import Home from './pages/Home';
-import { InventoryProvider } from './context/ShopContext';
+import LoginView from './components/LoginView';
+import { InventoryProvider, useInventory } from './context/ShopContext';
+
+// Auth Wrapper to conditionally render Login or Home
+const MainLayout = () => {
+  const { currentUser } = useInventory();
+  return currentUser ? <Home /> : <LoginView />;
+};
 
 function App() {
   return (
     <InventoryProvider>
-       <Home />
+       <MainLayout />
     </InventoryProvider>
   );
 }

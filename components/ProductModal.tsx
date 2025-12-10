@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, Save, Sparkles, Loader2, Printer } from 'lucide-react';
+import { X, Save, Sparkles, Loader2, Printer, Store, Package, DollarSign } from 'lucide-react';
 import { InventoryItem, Category } from '../types';
 import { generateProductDetails } from '../services/geminiService';
 import { useInventory } from '../context/ShopContext';
@@ -15,11 +15,13 @@ interface ProductModalProps {
 
 const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSubmit, initialData, isAdjustment }) => {
   const { locations } = useInventory();
+  const [activeTab, setActiveTab] = useState<'details' | 'pricing'>('details');
   
   // Form state
   const [formData, setFormData] = useState<Partial<InventoryItem>>({
     sku: '', name: '', description: '', category: Category.Electronics,
-    costPrice: 0, sellingPrice: 0, stockQuantity: 0, lowStockThreshold: 10, supplier: '', barcode: ''
+    costPrice: 0, sellingPrice: 0, stockQuantity: 0, lowStockThreshold: 10, supplier: '', barcode: '',
+    locationPrices: {}
   });
   
   // Specific states for logic
@@ -33,7 +35,10 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSubmit, 
 
   useEffect(() => {
     if (initialData) {
-      setFormData(initialData);
+      setFormData({
+        ...initialData,
+        locationPrices: initialData.locationPrices || {}
+      });
       setAdjustQty(0);
       setInitialStockInput(0);
       // Default location for adjustment to first available or first in list
@@ -41,11 +46,13 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSubmit, 
     } else {
       setFormData({
         sku: '', name: '', description: '', category: Category.Electronics,
-        costPrice: 0, sellingPrice: 0, stockQuantity: 0, lowStockThreshold: 10, supplier: '', barcode: ''
+        costPrice: 0, sellingPrice: 0, stockQuantity: 0, lowStockThreshold: 10, supplier: '', barcode: '',
+        locationPrices: {}
       });
       setInitialStockInput(0);
       setSelectedLocationId(locations[0]?.id || '');
     }
+    setActiveTab('details');
   }, [initialData, isOpen, locations]);
 
   const handleGenerateAI = async () => {
@@ -62,6 +69,16 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSubmit, 
     setIsGenerating(false);
   };
 
+  const handlePriceChange = (locId: string, price: string) => {
+    const newPrices = { ...formData.locationPrices };
+    if (!price) {
+      delete newPrices[locId];
+    } else {
+      newPrices[locId] = parseFloat(price);
+    }
+    setFormData(prev => ({ ...prev, locationPrices: newPrices }));
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (isAdjustment) {
@@ -72,7 +89,7 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSubmit, 
         reason: adjustReason 
       });
     } else {
-      // Add New Item
+      // Add New Item or Update
       onSubmit({ 
         ...formData, 
         barcode: formData.barcode || formData.sku, // Default barcode to SKU if empty
@@ -124,9 +141,29 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSubmit, 
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+        <form onSubmit={handleSubmit} className="p-6 pt-2 space-y-4 max-h-[80vh] overflow-y-auto">
+          {/* Tabs (Only in Edit/Create Mode) */}
+          {!isAdjustment && (
+            <div className="flex border-b border-slate-200 mb-4 sticky top-0 bg-white z-10 pt-4">
+              <button 
+                type="button"
+                className={`flex-1 pb-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'details' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                onClick={() => setActiveTab('details')}
+              >
+                Details
+              </button>
+              <button 
+                type="button"
+                className={`flex-1 pb-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'pricing' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                onClick={() => setActiveTab('pricing')}
+              >
+                Multi-Location Pricing
+              </button>
+            </div>
+          )}
+
           {isAdjustment ? (
-            <div className="space-y-4">
+            <div className="space-y-4 pt-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Select Location</label>
                 <select
@@ -182,160 +219,212 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSubmit, 
             </div>
           ) : (
             <>
-              {/* Product Edit/Add Form */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-2 relative">
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Product Name</label>
-                  <div className="flex gap-2">
-                     <input
+              {/* DETAILS TAB */}
+              {activeTab === 'details' && (
+                <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-right-4 duration-300">
+                  <div className="col-span-2 relative">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Product Name</label>
+                    <div className="flex gap-2">
+                      <input
+                          type="text"
+                          required
+                          value={formData.name}
+                          onChange={e => setFormData({...formData, name: e.target.value})}
+                          className="flex-1 px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500"
+                          placeholder="e.g. Wireless Mouse"
+                        />
+                        {!initialData && (
+                          <button
+                            type="button"
+                            onClick={handleGenerateAI}
+                            disabled={isGenerating || !formData.name}
+                            className="px-3 py-2 bg-indigo-100 text-indigo-600 rounded-lg hover:bg-indigo-200 disabled:opacity-50 flex items-center gap-2 text-sm font-medium"
+                          >
+                            {isGenerating ? <Loader2 className="animate-spin" size={16} /> : <Sparkles size={16} />}
+                            AI Auto-Fill
+                          </button>
+                        )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">SKU</label>
+                    <input
                         type="text"
                         required
-                        value={formData.name}
-                        onChange={e => setFormData({...formData, name: e.target.value})}
-                        className="flex-1 px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500"
-                        placeholder="e.g. Wireless Mouse"
+                        value={formData.sku}
+                        onChange={e => setFormData({...formData, sku: e.target.value})}
+                        className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500"
                       />
-                      {!initialData && (
-                        <button
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
+                    <select
+                        value={formData.category}
+                        onChange={e => setFormData({...formData, category: e.target.value as Category})}
+                        className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500"
+                    >
+                      {Object.values(Category).map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+
+                  {/* Barcode Section */}
+                  <div className="col-span-2 bg-slate-50 p-3 rounded-lg border border-slate-100 flex items-center gap-4">
+                    <div className="flex-1">
+                        <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Barcode Label</label>
+                        <Barcode value={formData.barcode || formData.sku || 'PENDING'} />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                        <button 
                           type="button"
-                          onClick={handleGenerateAI}
-                          disabled={isGenerating || !formData.name}
-                          className="px-3 py-2 bg-indigo-100 text-indigo-600 rounded-lg hover:bg-indigo-200 disabled:opacity-50 flex items-center gap-2 text-sm font-medium"
+                          onClick={() => alert("Printing label for " + (formData.sku))}
+                          className="p-2 bg-white border border-slate-200 rounded hover:bg-slate-100 text-slate-600 flex flex-col items-center justify-center gap-1 text-xs font-medium w-20"
                         >
-                          {isGenerating ? <Loader2 className="animate-spin" size={16} /> : <Sparkles size={16} />}
-                          AI Auto-Fill
+                          <Printer size={16} />
+                          Print
                         </button>
-                      )}
-                  </div>
-                </div>
-
-                <div>
-                   <label className="block text-sm font-medium text-slate-700 mb-1">SKU</label>
-                   <input
-                      type="text"
-                      required
-                      value={formData.sku}
-                      onChange={e => setFormData({...formData, sku: e.target.value})}
-                      className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500"
-                    />
-                </div>
-
-                <div>
-                   <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
-                   <select
-                      value={formData.category}
-                      onChange={e => setFormData({...formData, category: e.target.value as Category})}
-                      className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500"
-                   >
-                     {Object.values(Category).map(c => <option key={c} value={c}>{c}</option>)}
-                   </select>
-                </div>
-
-                {/* Barcode Section */}
-                <div className="col-span-2 bg-slate-50 p-3 rounded-lg border border-slate-100 flex items-center gap-4">
-                   <div className="flex-1">
-                      <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Barcode Label</label>
-                      <Barcode value={formData.barcode || formData.sku || 'PENDING'} />
-                   </div>
-                   <div className="flex flex-col gap-2">
-                      <button 
-                        type="button"
-                        onClick={() => alert("Printing label for " + (formData.sku))}
-                        className="p-2 bg-white border border-slate-200 rounded hover:bg-slate-100 text-slate-600 flex flex-col items-center justify-center gap-1 text-xs font-medium w-20"
-                      >
-                         <Printer size={16} />
-                         Print
-                      </button>
-                   </div>
-                </div>
-                
-                <div className="col-span-2">
-                   <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
-                   <textarea
-                      value={formData.description}
-                      onChange={e => setFormData({...formData, description: e.target.value})}
-                      rows={2}
-                      className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500"
-                    />
-                </div>
-
-                <div>
-                   <label className="block text-sm font-medium text-slate-700 mb-1">Cost Price</label>
-                   <input
-                      type="number"
-                      step="0.01"
-                      required
-                      value={formData.costPrice}
-                      onChange={e => setFormData({...formData, costPrice: Number(e.target.value)})}
-                      className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500"
-                    />
-                </div>
-
-                <div>
-                   <label className="block text-sm font-medium text-slate-700 mb-1">Selling Price</label>
-                   <input
-                      type="number"
-                      step="0.01"
-                      required
-                      value={formData.sellingPrice}
-                      onChange={e => setFormData({...formData, sellingPrice: Number(e.target.value)})}
-                      className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500"
-                    />
-                </div>
-
-                {/* Initial Stock Section - Only for New Items */}
-                {!initialData && (
-                  <div className="col-span-2 grid grid-cols-2 gap-4 bg-slate-50 p-3 rounded-lg border border-slate-100">
-                    <div>
-                       <label className="block text-sm font-medium text-slate-700 mb-1">Initial Stock</label>
-                       <input
-                          type="number"
-                          required
-                          value={initialStockInput}
-                          onChange={e => setInitialStockInput(Number(e.target.value))}
-                          className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500"
-                        />
-                    </div>
-                    <div>
-                       <label className="block text-sm font-medium text-slate-700 mb-1">Location</label>
-                       <select
-                          value={selectedLocationId}
-                          onChange={e => setSelectedLocationId(e.target.value)}
-                          className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500"
-                       >
-                         {locations.map(loc => (
-                            <option key={loc.id} value={loc.id}>{loc.name}</option>
-                         ))}
-                       </select>
                     </div>
                   </div>
-                )}
-                
-                <div>
-                   <label className="block text-sm font-medium text-slate-700 mb-1">Low Stock Limit</label>
-                   <input
-                      type="number"
-                      required
-                      value={formData.lowStockThreshold}
-                      onChange={e => setFormData({...formData, lowStockThreshold: Number(e.target.value)})}
-                      className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500"
-                    />
-                </div>
+                  
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
+                    <textarea
+                        value={formData.description}
+                        onChange={e => setFormData({...formData, description: e.target.value})}
+                        rows={2}
+                        className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500"
+                      />
+                  </div>
 
-                 <div className="col-span-1">
-                   <label className="block text-sm font-medium text-slate-700 mb-1">Supplier</label>
-                   <input
-                      type="text"
-                      value={formData.supplier}
-                      onChange={e => setFormData({...formData, supplier: e.target.value})}
-                      className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500"
-                    />
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Cost Price</label>
+                    <input
+                        type="number"
+                        step="0.01"
+                        required
+                        value={formData.costPrice}
+                        onChange={e => setFormData({...formData, costPrice: Number(e.target.value)})}
+                        className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500"
+                      />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Base Selling Price</label>
+                    <input
+                        type="number"
+                        step="0.01"
+                        required
+                        value={formData.sellingPrice}
+                        onChange={e => setFormData({...formData, sellingPrice: Number(e.target.value)})}
+                        className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500"
+                      />
+                  </div>
+
+                  {/* Initial Stock Section - Only for New Items */}
+                  {!initialData && (
+                    <div className="col-span-2 grid grid-cols-2 gap-4 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Initial Stock</label>
+                        <input
+                            type="number"
+                            required
+                            value={initialStockInput}
+                            onChange={e => setInitialStockInput(Number(e.target.value))}
+                            className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500"
+                          />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Location</label>
+                        <select
+                            value={selectedLocationId}
+                            onChange={e => setSelectedLocationId(e.target.value)}
+                            className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500"
+                        >
+                          {locations.map(loc => (
+                              <option key={loc.id} value={loc.id}>{loc.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Low Stock Limit</label>
+                    <input
+                        type="number"
+                        required
+                        value={formData.lowStockThreshold}
+                        onChange={e => setFormData({...formData, lowStockThreshold: Number(e.target.value)})}
+                        className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500"
+                      />
+                  </div>
+
+                  <div className="col-span-1">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Supplier</label>
+                    <input
+                        type="text"
+                        value={formData.supplier}
+                        onChange={e => setFormData({...formData, supplier: e.target.value})}
+                        className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500"
+                      />
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {/* PRICING TAB */}
+              {activeTab === 'pricing' && (
+                <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
+                  <div className="bg-indigo-50 p-4 rounded-lg border border-indigo-100 flex items-start gap-3">
+                    <div className="bg-indigo-100 p-2 rounded-full text-indigo-600 mt-1">
+                      <DollarSign size={18} />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-indigo-900 text-sm">Location-Specific Pricing</h4>
+                      <p className="text-xs text-indigo-700 mt-1">
+                        Set different selling prices for warehouses or specific store branches. 
+                        Leave the field blank to use the Base Selling Price (${formData.sellingPrice || 0}).
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
+                    {locations.map(loc => (
+                      <div key={loc.id} className="flex items-center justify-between p-3 border border-slate-200 rounded-lg bg-white hover:border-indigo-300 transition-colors">
+                        <div className="flex items-center gap-3">
+                          <div className={`p-2 rounded-full ${loc.type === 'WAREHOUSE' ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-blue-600'}`}>
+                              {loc.type === 'WAREHOUSE' ? <Package size={16} /> : <Store size={16} />}
+                          </div>
+                          <div>
+                            <p className="font-medium text-sm text-slate-900">{loc.name}</p>
+                            <p className="text-xs text-slate-500 capitalize">{loc.type.toLowerCase()}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div className="text-right">
+                             <p className="text-[10px] text-slate-400 uppercase tracking-wider">Override Price</p>
+                             <div className="relative">
+                               <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+                               <input 
+                                 type="number" 
+                                 step="0.01"
+                                 placeholder={(formData.sellingPrice || 0).toFixed(2)}
+                                 value={formData.locationPrices?.[loc.id] || ''}
+                                 onChange={(e) => handlePriceChange(loc.id, e.target.value)}
+                                 className="w-24 pl-5 pr-2 py-1.5 text-right text-sm border border-slate-300 rounded focus:ring-2 focus:ring-indigo-500"
+                               />
+                             </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </>
           )}
 
-          <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
+          <div className="pt-4 border-t border-slate-100 flex justify-end gap-3 bg-white sticky bottom-0 z-10 pb-2">
             <button
               type="button"
               onClick={onClose}
