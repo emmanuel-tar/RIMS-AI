@@ -1,10 +1,10 @@
 
 import React from 'react';
-import { LayoutDashboard, Package, Settings, Sparkles, LogOut, BarChart3, ClipboardCheck, ShoppingCart, Users, Truck, Contact, Wifi, WifiOff, RefreshCw, LayoutGrid } from 'lucide-react';
+import { LayoutDashboard, Package, Settings, Sparkles, LogOut, BarChart3, ClipboardCheck, ShoppingCart, Users, Truck, Contact, Wifi, WifiOff, RefreshCw, LayoutGrid, History } from 'lucide-react';
 import { useInventory } from '../context/ShopContext';
 
 interface SidebarProps {
-  currentView: 'dashboard' | 'inventory' | 'audit' | 'reports' | 'pos' | 'suppliers' | 'orders' | 'settings' | 'team' | 'customers' | 'marketplace';
+  currentView: 'dashboard' | 'inventory' | 'audit' | 'reports' | 'pos' | 'suppliers' | 'orders' | 'settings' | 'team' | 'customers' | 'marketplace' | 'activity';
   onChangeView: (view: any) => void;
   onOpenAI: () => void;
 }
@@ -109,6 +109,16 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, onOpenAI }
             >
               <ClipboardCheck size={20} />
               Stock Audit
+            </button>
+            
+            <button
+              onClick={() => onChangeView('activity')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                currentView === 'activity' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+              }`}
+            >
+              <History size={20} />
+              Activity Log
             </button>
 
             {features.REPORTS && (

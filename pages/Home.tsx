@@ -17,6 +17,7 @@ import SettingsView from '../components/SettingsView';
 import DashboardView from '../components/DashboardView';
 import AIAssistant from '../components/AIAssistant';
 import FeatureMarketplace from '../components/FeatureMarketplace';
+import ActivityLogView from '../components/ActivityLogView';
 import { InventoryItem } from '../types';
 
 const Home: React.FC = () => {
@@ -25,7 +26,7 @@ const Home: React.FC = () => {
     addItem, updateItem, adjustStock, currentUser, settings
   } = useInventory();
   
-  const [currentView, setCurrentView] = useState<'dashboard' | 'inventory' | 'audit' | 'reports' | 'pos' | 'suppliers' | 'orders' | 'settings' | 'team' | 'customers' | 'marketplace'>('dashboard');
+  const [currentView, setCurrentView] = useState<'dashboard' | 'inventory' | 'audit' | 'reports' | 'pos' | 'suppliers' | 'orders' | 'settings' | 'team' | 'customers' | 'marketplace' | 'activity'>('dashboard');
   const [isAIModalOpen, setAIModalOpen] = useState(false);
   
   // Modal States
@@ -115,7 +116,7 @@ const Home: React.FC = () => {
         <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-200 px-8 py-4 flex justify-between items-center">
           <div>
             <h1 className="text-2xl font-bold text-slate-800 capitalize">
-              {currentView === 'pos' ? 'Point of Sale' : currentView}
+              {currentView === 'pos' ? 'Point of Sale' : currentView.replace('activity', 'Activity Log')}
             </h1>
             <p className="text-sm text-slate-500">
               {currentView === 'dashboard' ? `Overview for ${selectedLocationId === 'all' ? 'All Locations' : locations.find(l => l.id === selectedLocationId)?.name}` : 
@@ -125,13 +126,14 @@ const Home: React.FC = () => {
                currentView === 'team' ? 'Staff & Roles' :
                currentView === 'customers' ? 'CRM & Loyalty' :
                currentView === 'marketplace' ? 'Manage Features & Modules' :
+               currentView === 'activity' ? 'Audit Trail & History' :
                'Manage your retail operations'}
             </p>
           </div>
 
           <div className="flex items-center gap-3">
              {/* Location Switcher - Hide on global views like Settings */}
-             {!['reports', 'settings', 'suppliers', 'team', 'customers', 'marketplace'].includes(currentView) && settings.features.MULTI_LOCATION && (
+             {!['reports', 'settings', 'suppliers', 'team', 'customers', 'marketplace', 'activity'].includes(currentView) && settings.features.MULTI_LOCATION && (
                <div className="flex flex-col items-end">
                  {currentView === 'pos' && selectedLocationId === 'all' && (
                    <span className="text-[10px] text-amber-600 font-bold uppercase mb-0.5 animate-pulse">Select Store Location</span>
@@ -191,6 +193,10 @@ const Home: React.FC = () => {
 
           {currentView === 'audit' && (
             <AuditView />
+          )}
+          
+          {currentView === 'activity' && (
+            <ActivityLogView />
           )}
 
           {currentView === 'reports' && settings.features.REPORTS && (
