@@ -2,13 +2,13 @@
 import React, { useMemo, useState } from 'react';
 import { 
   DollarSign, Package, AlertTriangle, ArrowUpRight, 
-  TrendingUp, Activity, Calendar, ArrowRight 
+  TrendingUp, Activity, Calendar, ArrowRight, Wallet 
 } from 'lucide-react';
 import { useInventory } from '../context/ShopContext';
 import { Transaction } from '../types';
 
 const DashboardView: React.FC<{ onNavigate: (view: any) => void }> = ({ onNavigate }) => {
-  const { stats, inventory, transactions, locations } = useInventory();
+  const { stats, inventory, transactions, locations, expenses } = useInventory();
   const [hoveredBar, setHoveredBar] = useState<number | null>(null);
 
   // --- Data Processing for Charts ---
@@ -25,7 +25,7 @@ const DashboardView: React.FC<{ onNavigate: (view: any) => void }> = ({ onNaviga
       const dailyTotal = transactions
         .filter(t => t.type === 'SALE' && t.timestamp.startsWith(date))
         .reduce((sum, t) => {
-           // Find item to get price (simplified, ideally transaction stores price snapshot)
+           // Find item to get price
            const item = inventory.find(i => i.id === t.itemId);
            return sum + (t.quantity * (item?.sellingPrice || 0));
         }, 0);
@@ -45,6 +45,15 @@ const DashboardView: React.FC<{ onNavigate: (view: any) => void }> = ({ onNaviga
   const lowStockItems = useMemo(() => {
     return inventory.filter(item => item.stockQuantity <= item.lowStockThreshold).slice(0, 5);
   }, [inventory]);
+  
+  // 4. Financial Snapshot
+  const totalRevenue = transactions.filter(t => t.type === 'SALE').reduce((sum, t) => {
+      const item = inventory.find(i => i.id === t.itemId);
+      return sum + (t.quantity * (item?.sellingPrice || 0));
+  }, 0);
+  
+  const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+  const netProfit = totalRevenue - totalExpenses; // Simplified: Revenue - Expenses. (Should technically include COGS)
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -53,12 +62,12 @@ const DashboardView: React.FC<{ onNavigate: (view: any) => void }> = ({ onNaviga
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex items-start justify-between group hover:border-indigo-300 transition-colors">
           <div>
-            <p className="text-sm font-medium text-slate-500">Total Inventory Value</p>
-            <h3 className="text-2xl font-bold text-slate-900 mt-2">
-              ${stats.totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+            <p className="text-sm font-medium text-slate-500">Net Profit</p>
+            <h3 className={`text-2xl font-bold mt-2 ${netProfit >= 0 ? 'text-slate-900' : 'text-red-600'}`}>
+              ${netProfit.toLocaleString(undefined, { maximumFractionDigits: 0 })}
             </h3>
             <span className="text-xs text-green-600 flex items-center gap-1 mt-1 font-medium bg-green-50 w-fit px-2 py-0.5 rounded-full">
-              <TrendingUp size={12} /> +2.5% vs last month
+              <TrendingUp size={12} /> Revenue - Expenses
             </span>
           </div>
           <div className="p-3 bg-green-50 rounded-lg text-green-600 group-hover:bg-green-100 transition-colors">
@@ -68,16 +77,16 @@ const DashboardView: React.FC<{ onNavigate: (view: any) => void }> = ({ onNaviga
 
         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex items-start justify-between group hover:border-blue-300 transition-colors">
            <div>
-            <p className="text-sm font-medium text-slate-500">Total Items in Stock</p>
+            <p className="text-sm font-medium text-slate-500">Total Expenses</p>
             <h3 className="text-2xl font-bold text-slate-900 mt-2">
-              {stats.totalItems.toLocaleString()}
+              ${totalExpenses.toLocaleString(undefined, { maximumFractionDigits: 0 })}
             </h3>
             <span className="text-xs text-slate-400 mt-1 block">
-              Across {locations.length} locations
+              Operational costs
             </span>
           </div>
           <div className="p-3 bg-blue-50 rounded-lg text-blue-600 group-hover:bg-blue-100 transition-colors">
-            <Package size={20} />
+            <Wallet size={20} />
           </div>
         </div>
 
@@ -101,16 +110,16 @@ const DashboardView: React.FC<{ onNavigate: (view: any) => void }> = ({ onNaviga
 
          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex items-start justify-between group hover:border-purple-300 transition-colors">
            <div>
-            <p className="text-sm font-medium text-slate-500">Active Categories</p>
+            <p className="text-sm font-medium text-slate-500">Inventory Value</p>
             <h3 className="text-2xl font-bold text-slate-900 mt-2">
-              {stats.categories}
+              ${stats.totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
             </h3>
             <span className="text-xs text-slate-400 mt-1 block">
-              Product diversity
+              Asset valuation
             </span>
           </div>
           <div className="p-3 bg-purple-50 rounded-lg text-purple-600 group-hover:bg-purple-100 transition-colors">
-            <ArrowUpRight size={20} />
+            <Package size={20} />
           </div>
         </div>
       </div>

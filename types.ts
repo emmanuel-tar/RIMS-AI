@@ -24,7 +24,7 @@ export interface CloudSettings {
 
 export type SyncStatus = 'CONNECTED' | 'DISCONNECTED' | 'SYNCING' | 'ERROR';
 
-export type FeatureModule = 'CRM' | 'TEAM' | 'SUPPLIERS' | 'MULTI_LOCATION' | 'CLOUD' | 'AI_ASSISTANT' | 'REPORTS';
+export type FeatureModule = 'CRM' | 'TEAM' | 'SUPPLIERS' | 'MULTI_LOCATION' | 'CLOUD' | 'AI_ASSISTANT' | 'REPORTS' | 'FINANCE';
 
 export interface StoreSettings {
   storeName: string;
@@ -36,6 +36,14 @@ export interface StoreSettings {
   loyaltyRedeemRate?: number; // Value of 1 point
   cloud?: CloudSettings;
   features: Record<FeatureModule, boolean>;
+}
+
+export interface InventoryBatch {
+  id: string;
+  batchNumber: string;
+  expiryDate: string;
+  quantity: number;
+  locationId: string;
 }
 
 export interface InventoryItem {
@@ -52,8 +60,9 @@ export interface InventoryItem {
   lowStockThreshold: number;
   supplier: string;
   lastUpdated: string;
-  expiryDate?: string;
+  expiryDate?: string; // Earliest expiry date across batches
   locationPrices?: Record<string, number>; // locationId -> price override
+  batches?: InventoryBatch[];
 }
 
 export interface Transaction {
@@ -141,4 +150,15 @@ export interface Customer {
   totalSpent: number;
   lastVisit?: string;
   notes?: string;
+}
+
+export interface Expense {
+  id: string;
+  description: string;
+  amount: number;
+  category: 'RENT' | 'UTILITIES' | 'SALARY' | 'MARKETING' | 'MAINTENANCE' | 'OTHER';
+  date: string;
+  locationId: string;
+  recordedBy: string;
+  supplierId?: string;
 }

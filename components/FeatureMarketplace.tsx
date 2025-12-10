@@ -4,7 +4,7 @@ import { useInventory } from '../context/ShopContext';
 import { FeatureModule } from '../types';
 import { 
   Users, Truck, Cloud, Database, BarChart3, 
-  Sparkles, Contact, Map, CheckCircle, Lock, MonitorPlay 
+  Sparkles, Contact, Map, CheckCircle, Lock, MonitorPlay, Wallet 
 } from 'lucide-react';
 
 const FeatureMarketplace: React.FC = () => {
@@ -45,6 +45,13 @@ const FeatureMarketplace: React.FC = () => {
       description: 'Manage inventory across multiple warehouses and stores with inter-branch transfers.',
       icon: <Map size={24} />,
       price: '$25/mo'
+    },
+    {
+      id: 'FINANCE',
+      title: 'Finance & Expenses',
+      description: 'Track operational costs (Rent, Utilities) to see true Net Profit and Loss statements.',
+      icon: <Wallet size={24} />,
+      price: '$15/mo'
     },
     {
       id: 'CLOUD',

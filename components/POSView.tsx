@@ -1,8 +1,8 @@
 
-import React, { useState, useMemo } from 'react';
-import { Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, CheckCircle, PackageX, User, Tag, X, Receipt } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, Receipt, User, Tag, X, Zap, Check } from 'lucide-react';
 import { useInventory } from '../context/ShopContext';
-import { InventoryItem, Category, Transaction } from '../types';
+import { InventoryItem, Category } from '../types';
 import ReceiptModal from './ReceiptModal';
 
 interface CartItem extends InventoryItem {
@@ -10,7 +10,7 @@ interface CartItem extends InventoryItem {
 }
 
 const POSView: React.FC<{ locationId: string }> = ({ locationId }) => {
-  const { inventory, locations, processSale, customers, getPriceForLocation, settings } = useInventory();
+  const { inventory, locations, processSale, customers, getPriceForLocation, settings, transactions } = useInventory();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState<string>('All');
@@ -31,12 +31,33 @@ const POSView: React.FC<{ locationId: string }> = ({ locationId }) => {
     customer?: string;
   } | null>(null);
 
+  // Visual Feedback State
+  const [addedFeedbackId, setAddedFeedbackId] = useState<string | null>(null);
+
   // If locationId is 'all', default to the first location for sales logic
   const activeLocationId = locationId === 'all' ? locations[0]?.id : locationId;
   const activeLocationName = locations.find(l => l.id === activeLocationId)?.name || 'Unknown Location';
   const selectedCustomer = customers.find(c => c.id === selectedCustomerId);
 
-  // Filter products
+  // Calculate Frequently Purchased Items (Top Sellers)
+  const topSellers = useMemo(() => {
+    const salesCounts: Record<string, number> = {};
+    
+    // Aggregate sales quantities from transaction history
+    transactions.forEach(t => {
+      if (t.type === 'SALE') {
+        salesCounts[t.itemId] = (salesCounts[t.itemId] || 0) + t.quantity;
+      }
+    });
+
+    // Map to inventory items, sort by count, take top 6
+    return inventory
+      .map(item => ({ ...item, salesCount: salesCounts[item.id] || 0 }))
+      .sort((a, b) => b.salesCount - a.salesCount)
+      .slice(0, 6);
+  }, [transactions, inventory]);
+
+  // Filter products for the main grid
   const products = useMemo(() => {
     return inventory.filter(item => {
       const matchesSearch = item.name.toLowerCase().includes(search.toLowerCase()) || 
@@ -47,6 +68,10 @@ const POSView: React.FC<{ locationId: string }> = ({ locationId }) => {
   }, [inventory, search, activeCategory]);
 
   const addToCart = (item: InventoryItem) => {
+    // Trigger Feedback Animation
+    setAddedFeedbackId(item.id);
+    setTimeout(() => setAddedFeedbackId(null), 500);
+
     setCart(prev => {
       const existing = prev.find(i => i.id === item.id);
       if (existing) {
@@ -123,6 +148,38 @@ const POSView: React.FC<{ locationId: string }> = ({ locationId }) => {
       <div className="flex-1 flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         {/* Search & Filter Header */}
         <div className="p-4 border-b border-slate-100 space-y-4">
+          
+          {/* Quick Keys (Top Sellers) */}
+          {topSellers.length > 0 && activeCategory === 'All' && !search && (
+            <div className="pb-2">
+              <div className="flex items-center gap-2 mb-2 text-xs font-bold text-indigo-600 uppercase tracking-wider">
+                <Zap size={14} fill="currentColor" />
+                Quick Keys
+              </div>
+              <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+                {topSellers.map(item => {
+                  const price = getPriceForLocation(item, activeLocationId);
+                  return (
+                    <button
+                      key={`quick-${item.id}`}
+                      onClick={() => addToCart(item)}
+                      className="flex-shrink-0 w-32 bg-indigo-50 hover:bg-indigo-100 border border-indigo-100 rounded-lg p-3 text-left transition-all relative overflow-hidden group active:scale-95"
+                    >
+                      {/* Feedback Overlay for Quick Key */}
+                      {addedFeedbackId === item.id && (
+                        <div className="absolute inset-0 bg-green-500/90 z-10 flex items-center justify-center text-white animate-in fade-in duration-200">
+                          <Check size={20} className="stroke-[3]" />
+                        </div>
+                      )}
+                      <p className="font-semibold text-slate-800 text-sm truncate">{item.name}</p>
+                      <p className="text-indigo-600 font-bold text-xs mt-1">${price.toFixed(2)}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="flex gap-4">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
@@ -154,13 +211,25 @@ const POSView: React.FC<{ locationId: string }> = ({ locationId }) => {
             {products.map(item => {
                const stock = item.stockDistribution[activeLocationId] || 0;
                const price = getPriceForLocation(item, activeLocationId);
+               const isRecentlyAdded = addedFeedbackId === item.id;
                
                return (
                  <button
                    key={item.id}
                    onClick={() => addToCart(item)}
-                   className="bg-white p-4 rounded-xl border border-slate-200 hover:border-indigo-500 hover:shadow-md transition-all text-left group flex flex-col h-full"
+                   className={`bg-white p-4 rounded-xl border transition-all text-left group flex flex-col h-full relative overflow-hidden active:scale-95 duration-100 ${
+                     isRecentlyAdded ? 'border-green-500 ring-2 ring-green-100' : 'border-slate-200 hover:border-indigo-500 hover:shadow-md'
+                   }`}
                  >
+                   {/* Feedback Overlay */}
+                   {isRecentlyAdded && (
+                      <div className="absolute inset-0 bg-green-50/80 z-10 flex items-center justify-center backdrop-blur-[1px] animate-in fade-in duration-200">
+                         <div className="bg-white rounded-full p-2 shadow-lg transform scale-125">
+                            <Check size={24} className="text-green-600 stroke-[3]" />
+                         </div>
+                      </div>
+                   )}
+
                    <div className="flex justify-between items-start mb-2">
                      <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded">{item.category}</span>
                      <span className={`text-xs font-medium ${stock <= item.lowStockThreshold ? 'text-red-500' : 'text-green-600'}`}>
@@ -173,19 +242,15 @@ const POSView: React.FC<{ locationId: string }> = ({ locationId }) => {
                    <p className="text-xs text-slate-400 mb-3">{item.sku}</p>
                    <div className="mt-auto flex items-center justify-between">
                       <span className="text-lg font-bold text-slate-900">${price.toFixed(2)}</span>
-                      <div className="bg-indigo-50 text-indigo-600 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Plus size={16} />
+                      <div className={`p-1.5 rounded-lg transition-all ${
+                         isRecentlyAdded ? 'bg-green-500 text-white' : 'bg-indigo-50 text-indigo-600 opacity-0 group-hover:opacity-100'
+                      }`}>
+                        {isRecentlyAdded ? <Check size={16} /> : <Plus size={16} />}
                       </div>
                    </div>
                  </button>
                );
             })}
-            {products.length === 0 && (
-               <div className="col-span-full flex flex-col items-center justify-center py-12 text-slate-400">
-                  <PackageX size={48} className="mb-2 opacity-50" />
-                  <p>No products found matching your search.</p>
-               </div>
-            )}
           </div>
         </div>
       </div>
@@ -214,7 +279,7 @@ const POSView: React.FC<{ locationId: string }> = ({ locationId }) => {
              cart.map(item => {
                 const price = getPriceForLocation(item, activeLocationId);
                 return (
-                 <div key={item.id} className="flex gap-3 bg-white p-3 rounded-lg border border-slate-100 shadow-sm">
+                 <div key={item.id} className="flex gap-3 bg-white p-3 rounded-lg border border-slate-100 shadow-sm animate-in slide-in-from-right-4 duration-300">
                     <div className="flex-1">
                        <p className="font-medium text-slate-800 text-sm line-clamp-1">{item.name}</p>
                        <p className="text-xs text-slate-500 mb-2">{item.sku}</p>

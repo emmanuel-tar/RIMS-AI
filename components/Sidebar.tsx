@@ -1,10 +1,10 @@
 
 import React from 'react';
-import { LayoutDashboard, Package, Settings, Sparkles, LogOut, BarChart3, ClipboardCheck, ShoppingCart, Users, Truck, Contact, Wifi, WifiOff, RefreshCw, LayoutGrid, History } from 'lucide-react';
+import { LayoutDashboard, Package, Settings, Sparkles, LogOut, BarChart3, ClipboardCheck, ShoppingCart, Users, Truck, Contact, Wifi, WifiOff, RefreshCw, LayoutGrid, History, Wallet } from 'lucide-react';
 import { useInventory } from '../context/ShopContext';
 
 interface SidebarProps {
-  currentView: 'dashboard' | 'inventory' | 'audit' | 'reports' | 'pos' | 'suppliers' | 'orders' | 'settings' | 'team' | 'customers' | 'marketplace' | 'activity';
+  currentView: 'dashboard' | 'inventory' | 'audit' | 'reports' | 'pos' | 'suppliers' | 'orders' | 'settings' | 'team' | 'customers' | 'marketplace' | 'activity' | 'expenses';
   onChangeView: (view: any) => void;
   onOpenAI: () => void;
 }
@@ -99,6 +99,18 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, onOpenAI }
                   Purchase Orders
                 </button>
               </>
+            )}
+
+            {features.FINANCE && (
+              <button
+                onClick={() => onChangeView('expenses')}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                  currentView === 'expenses' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                <Wallet size={20} />
+                Expenses
+              </button>
             )}
 
             <button

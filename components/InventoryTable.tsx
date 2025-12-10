@@ -1,8 +1,9 @@
 
-import React from 'react';
-import { Edit2, Trash2, AlertCircle, TrendingUp, TrendingDown, ArrowRightLeft, Tag } from 'lucide-react';
+import React, { useState } from 'react';
+import { Edit2, Trash2, AlertCircle, TrendingUp, TrendingDown, ArrowRightLeft, Tag, Clock, Printer } from 'lucide-react';
 import { InventoryItem } from '../types';
 import { useInventory } from '../context/ShopContext';
+import { printLabels } from '../services/printService';
 
 interface InventoryTableProps {
   onEdit: (item: InventoryItem) => void;
@@ -13,6 +14,7 @@ interface InventoryTableProps {
 
 const InventoryTable: React.FC<InventoryTableProps> = ({ onEdit, onAdjust, onTransfer, selectedLocationId }) => {
   const { inventory, deleteItem, searchQuery, locations, getPriceForLocation } = useInventory();
+  const [selectedItems, setSelectedItems] = useState<string[]>([]);
 
   const filteredItems = inventory.filter(item => 
     item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -20,8 +22,29 @@ const InventoryTable: React.FC<InventoryTableProps> = ({ onEdit, onAdjust, onTra
     item.category.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const handlePrintAll = () => {
+    const itemsToPrint = filteredItems.map(item => ({
+      name: item.name,
+      sku: item.sku,
+      barcode: item.barcode,
+      price: getPriceForLocation(item, selectedLocationId === 'all' ? locations[0]?.id : selectedLocationId),
+      count: 1 // Default 1 label per item in list view
+    }));
+    printLabels(itemsToPrint);
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <div className="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+         <h3 className="font-semibold text-slate-700">Inventory List ({filteredItems.length})</h3>
+         <button 
+           onClick={handlePrintAll}
+           className="text-sm bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors"
+         >
+           <Printer size={16} />
+           Print Shelf Labels (Visible)
+         </button>
+      </div>
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-slate-200">
           <thead className="bg-slate-50">
@@ -48,12 +71,26 @@ const InventoryTable: React.FC<InventoryTableProps> = ({ onEdit, onAdjust, onTra
               const currentPrice = getPriceForLocation(item, selectedLocationId === 'all' ? locations[0]?.id : selectedLocationId);
               const hasPriceOverride = selectedLocationId !== 'all' && item.locationPrices?.[selectedLocationId];
 
+              // Expiry Check (Warn if within 30 days)
+              let isExpiringSoon = false;
+              if (item.expiryDate) {
+                 const daysUntilExpiry = Math.ceil((new Date(item.expiryDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+                 isExpiringSoon = daysUntilExpiry <= 30;
+              }
+
               return (
                 <tr key={item.id} className="hover:bg-slate-50 transition-colors">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex flex-col">
                       <span className="text-sm font-medium text-slate-900">{item.name}</span>
-                      <span className="text-xs text-slate-500 font-mono">{item.sku}</span>
+                      <div className="flex items-center gap-2">
+                         <span className="text-xs text-slate-500 font-mono">{item.sku}</span>
+                         {isExpiringSoon && (
+                           <span className="text-[10px] bg-red-50 text-red-600 px-1.5 py-0.5 rounded border border-red-100 flex items-center gap-0.5">
+                             <Clock size={10} /> Expiring
+                           </span>
+                         )}
+                      </div>
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -95,6 +132,19 @@ const InventoryTable: React.FC<InventoryTableProps> = ({ onEdit, onAdjust, onTra
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     <div className="flex items-center justify-end gap-2">
+                       <button 
+                        onClick={() => printLabels([{
+                          name: item.name,
+                          sku: item.sku,
+                          barcode: item.barcode,
+                          price: currentPrice,
+                          count: 1
+                        }])}
+                        className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                        title="Print Label"
+                       >
+                         <Printer size={18} />
+                       </button>
                        <button 
                         onClick={() => onTransfer(item)}
                         className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"

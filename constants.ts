@@ -1,5 +1,5 @@
 
-import { InventoryItem, Category, Location, Supplier, Employee, Customer } from './types';
+import { InventoryItem, Category, Location, Supplier, Employee, Customer, Expense } from './types';
 
 export const MOCK_LOCATIONS: Location[] = [
   { id: 'loc-1', name: 'Main Warehouse', type: 'WAREHOUSE', address: '123 Logistics Way' },
@@ -107,6 +107,36 @@ export const MOCK_CUSTOMERS: Customer[] = [
     loyaltyPoints: 1500,
     totalSpent: 5200.00,
     lastVisit: '2023-11-05T09:15:00Z'
+  }
+];
+
+export const MOCK_EXPENSES: Expense[] = [
+  {
+    id: 'exp-1',
+    description: 'Monthly Rent - Downtown',
+    amount: 2500,
+    category: 'RENT',
+    date: new Date(new Date().setDate(1)).toISOString(), // 1st of current month
+    locationId: 'loc-2',
+    recordedBy: 'Alice Manager'
+  },
+  {
+    id: 'exp-2',
+    description: 'Electricity Bill',
+    amount: 340.50,
+    category: 'UTILITIES',
+    date: new Date(new Date().setDate(5)).toISOString(),
+    locationId: 'loc-1',
+    recordedBy: 'Alice Manager'
+  },
+  {
+    id: 'exp-3',
+    description: 'Store Cleaning',
+    amount: 150,
+    category: 'MAINTENANCE',
+    date: new Date(new Date().setDate(10)).toISOString(),
+    locationId: 'loc-2',
+    recordedBy: 'Alice Manager'
   }
 ];
 

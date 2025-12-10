@@ -1,9 +1,10 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, Save, Sparkles, Loader2, Printer, Store, Package, DollarSign } from 'lucide-react';
+import { X, Save, Sparkles, Loader2, Printer, Store, Package, DollarSign, Calendar, List, RefreshCw } from 'lucide-react';
 import { InventoryItem, Category } from '../types';
 import { generateProductDetails } from '../services/geminiService';
 import { useInventory } from '../context/ShopContext';
+import { printLabels } from '../services/printService';
 
 interface ProductModalProps {
   isOpen: boolean;
@@ -14,8 +15,8 @@ interface ProductModalProps {
 }
 
 const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSubmit, initialData, isAdjustment }) => {
-  const { locations } = useInventory();
-  const [activeTab, setActiveTab] = useState<'details' | 'pricing'>('details');
+  const { locations, generateSku } = useInventory();
+  const [activeTab, setActiveTab] = useState<'details' | 'pricing' | 'batches'>('details');
   
   // Form state
   const [formData, setFormData] = useState<Partial<InventoryItem>>({
@@ -69,6 +70,17 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSubmit, 
     setIsGenerating(false);
   };
 
+  const handleAutoSku = () => {
+    if (formData.category) {
+      const newSku = generateSku(formData.category);
+      setFormData(prev => ({
+        ...prev,
+        sku: newSku,
+        barcode: prev.barcode || newSku // Auto-set barcode if empty
+      }));
+    }
+  };
+
   const handlePriceChange = (locId: string, price: string) => {
     const newPrices = { ...formData.locationPrices };
     if (!price) {
@@ -99,23 +111,29 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSubmit, 
     }
     onClose();
   };
+  
+  const handlePrintLabel = () => {
+    // For print, we might default to 1 or ask, here we just print 1 for preview/single item
+    // In a real scenario, could add a prompt for qty
+    if (formData.name && formData.sku) {
+        printLabels([{
+            name: formData.name,
+            sku: formData.sku,
+            barcode: formData.barcode,
+            price: formData.sellingPrice || 0,
+            count: 1
+        }]);
+    }
+  };
 
-  // Simple Barcode SVG Generator
-  const Barcode = ({ value }: { value: string }) => {
+  // Simple Barcode CSS Visualizer (Not the font one used for print, but UI consistency)
+  // We can switch this to use the font too for WYSIWYG
+  const BarcodeVisual = ({ value }: { value: string }) => {
     if (!value) return null;
     return (
       <div className="flex flex-col items-center bg-white p-2 border border-slate-200 rounded w-full">
-        <div className="h-12 w-full flex items-end justify-center gap-[2px] overflow-hidden px-4">
-           {value.split('').map((char, i) => (
-             <div 
-               key={i} 
-               className="bg-slate-900" 
-               style={{ 
-                 height: `${Math.max(60, (char.charCodeAt(0) % 50) + 40)}%`, 
-                 width: '4px' 
-               }} 
-             />
-           ))}
+        <div className="font-barcode text-5xl leading-none">
+            *{value.toUpperCase()}*
         </div>
         <div className="text-xs font-mono mt-1 tracking-widest text-slate-600">{value}</div>
       </div>
@@ -144,21 +162,30 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSubmit, 
         <form onSubmit={handleSubmit} className="p-6 pt-2 space-y-4 max-h-[80vh] overflow-y-auto">
           {/* Tabs (Only in Edit/Create Mode) */}
           {!isAdjustment && (
-            <div className="flex border-b border-slate-200 mb-4 sticky top-0 bg-white z-10 pt-4">
+            <div className="flex border-b border-slate-200 mb-4 sticky top-0 bg-white z-10 pt-4 overflow-x-auto">
               <button 
                 type="button"
-                className={`flex-1 pb-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'details' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                className={`flex-1 min-w-[80px] pb-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'details' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                 onClick={() => setActiveTab('details')}
               >
                 Details
               </button>
               <button 
                 type="button"
-                className={`flex-1 pb-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'pricing' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                className={`flex-1 min-w-[80px] pb-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'pricing' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                 onClick={() => setActiveTab('pricing')}
               >
-                Multi-Location Pricing
+                Pricing
               </button>
+              {initialData && (
+                <button 
+                  type="button"
+                  className={`flex-1 min-w-[80px] pb-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'batches' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                  onClick={() => setActiveTab('batches')}
+                >
+                  Batches
+                </button>
+              )}
             </div>
           )}
 
@@ -249,13 +276,25 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSubmit, 
 
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">SKU</label>
-                    <input
-                        type="text"
-                        required
-                        value={formData.sku}
-                        onChange={e => setFormData({...formData, sku: e.target.value})}
-                        className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500"
-                      />
+                    <div className="flex gap-2">
+                       <input
+                          type="text"
+                          required
+                          value={formData.sku}
+                          onChange={e => setFormData({...formData, sku: e.target.value})}
+                          className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500"
+                        />
+                        {!initialData && (
+                          <button
+                            type="button"
+                            onClick={handleAutoSku}
+                            title="Auto-Generate SKU"
+                            className="px-3 py-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 border border-slate-200 flex items-center justify-center"
+                          >
+                            <RefreshCw size={16} />
+                          </button>
+                        )}
+                    </div>
                   </div>
 
                   <div>
@@ -271,14 +310,14 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSubmit, 
 
                   {/* Barcode Section */}
                   <div className="col-span-2 bg-slate-50 p-3 rounded-lg border border-slate-100 flex items-center gap-4">
-                    <div className="flex-1">
-                        <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Barcode Label</label>
-                        <Barcode value={formData.barcode || formData.sku || 'PENDING'} />
+                    <div className="flex-1 text-center">
+                        <label className="block text-xs font-semibold text-slate-500 uppercase mb-1 text-left">Barcode Label</label>
+                        <BarcodeVisual value={formData.barcode || formData.sku || 'PENDING'} />
                     </div>
                     <div className="flex flex-col gap-2">
                         <button 
                           type="button"
-                          onClick={() => alert("Printing label for " + (formData.sku))}
+                          onClick={handlePrintLabel}
                           className="p-2 bg-white border border-slate-200 rounded hover:bg-slate-100 text-slate-600 flex flex-col items-center justify-center gap-1 text-xs font-medium w-20"
                         >
                           <Printer size={16} />
@@ -419,6 +458,57 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSubmit, 
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {/* BATCHES TAB */}
+              {activeTab === 'batches' && initialData && (
+                <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
+                  <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 flex items-start gap-3">
+                    <div className="bg-blue-100 p-2 rounded-full text-blue-600 mt-1">
+                      <List size={18} />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-blue-900 text-sm">Active Batches</h4>
+                      <p className="text-xs text-blue-700 mt-1">
+                        Track inventory by expiration date. Stock is automatically deducted from the earliest expiring batch during sales.
+                      </p>
+                    </div>
+                  </div>
+
+                  {(!initialData.batches || initialData.batches.length === 0) ? (
+                    <div className="text-center py-8 text-slate-400 bg-slate-50 rounded-lg border border-dashed border-slate-200">
+                       <p className="text-sm">No batch data available for this product.</p>
+                       <p className="text-xs mt-1">Batches are created when receiving Purchase Orders.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                      {[...initialData.batches].sort((a,b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime()).map(batch => (
+                         <div key={batch.id} className="p-3 border border-slate-200 rounded-lg bg-white flex justify-between items-center">
+                            <div>
+                               <div className="flex items-center gap-2">
+                                  <span className="text-xs font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded uppercase">Batch</span>
+                                  <span className="font-mono text-sm font-medium text-slate-800">{batch.batchNumber}</span>
+                               </div>
+                               <div className="flex items-center gap-3 mt-1 text-xs text-slate-500">
+                                  <span className="flex items-center gap-1">
+                                    <Calendar size={12} /> Exp: {new Date(batch.expiryDate).toLocaleDateString()}
+                                  </span>
+                                  <span>
+                                    Location: {locations.find(l => l.id === batch.locationId)?.name || 'Unknown'}
+                                  </span>
+                               </div>
+                            </div>
+                            <div className="text-right">
+                               <p className="text-sm font-bold text-slate-900">{batch.quantity} Units</p>
+                               {new Date(batch.expiryDate) < new Date() && (
+                                 <span className="text-[10px] text-red-600 font-bold bg-red-50 px-2 py-0.5 rounded-full">EXPIRED</span>
+                               )}
+                            </div>
+                         </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </>

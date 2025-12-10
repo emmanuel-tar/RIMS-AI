@@ -18,6 +18,7 @@ import DashboardView from '../components/DashboardView';
 import AIAssistant from '../components/AIAssistant';
 import FeatureMarketplace from '../components/FeatureMarketplace';
 import ActivityLogView from '../components/ActivityLogView';
+import ExpensesView from '../components/ExpensesView';
 import { InventoryItem } from '../types';
 
 const Home: React.FC = () => {
@@ -26,7 +27,7 @@ const Home: React.FC = () => {
     addItem, updateItem, adjustStock, currentUser, settings
   } = useInventory();
   
-  const [currentView, setCurrentView] = useState<'dashboard' | 'inventory' | 'audit' | 'reports' | 'pos' | 'suppliers' | 'orders' | 'settings' | 'team' | 'customers' | 'marketplace' | 'activity'>('dashboard');
+  const [currentView, setCurrentView] = useState<'dashboard' | 'inventory' | 'audit' | 'reports' | 'pos' | 'suppliers' | 'orders' | 'settings' | 'team' | 'customers' | 'marketplace' | 'activity' | 'expenses'>('dashboard');
   const [isAIModalOpen, setAIModalOpen] = useState(false);
   
   // Modal States
@@ -49,6 +50,7 @@ const Home: React.FC = () => {
     if (currentView === 'team' && !settings.features.TEAM) setCurrentView('dashboard');
     if (currentView === 'customers' && !settings.features.CRM) setCurrentView('dashboard');
     if (currentView === 'orders' && !settings.features.SUPPLIERS) setCurrentView('dashboard');
+    if (currentView === 'expenses' && !settings.features.FINANCE) setCurrentView('dashboard');
   }, [settings.features, currentView]);
 
   // Handlers
@@ -127,6 +129,7 @@ const Home: React.FC = () => {
                currentView === 'customers' ? 'CRM & Loyalty' :
                currentView === 'marketplace' ? 'Manage Features & Modules' :
                currentView === 'activity' ? 'Audit Trail & History' :
+               currentView === 'expenses' ? 'Cost & Expense Tracking' :
                'Manage your retail operations'}
             </p>
           </div>
@@ -221,6 +224,10 @@ const Home: React.FC = () => {
 
           {currentView === 'customers' && settings.features.CRM && (
              <CustomersView />
+          )}
+          
+          {currentView === 'expenses' && settings.features.FINANCE && (
+             <ExpensesView />
           )}
 
           {currentView === 'settings' && (
