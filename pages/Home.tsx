@@ -11,6 +11,8 @@ import ReportsView from '../components/ReportsView';
 import POSView from '../components/POSView';
 import SuppliersView from '../components/SuppliersView';
 import PurchaseOrdersView from '../components/PurchaseOrdersView';
+import TeamView from '../components/TeamView';
+import CustomersView from '../components/CustomersView';
 import SettingsView from '../components/SettingsView';
 import AIAssistant from '../components/AIAssistant';
 import { InventoryItem } from '../types';
@@ -21,7 +23,7 @@ const Home: React.FC = () => {
     addItem, updateItem, adjustStock 
   } = useInventory();
   
-  const [currentView, setCurrentView] = useState<'dashboard' | 'inventory' | 'audit' | 'reports' | 'pos' | 'suppliers' | 'orders' | 'settings'>('dashboard');
+  const [currentView, setCurrentView] = useState<'dashboard' | 'inventory' | 'audit' | 'reports' | 'pos' | 'suppliers' | 'orders' | 'settings' | 'team' | 'customers'>('dashboard');
   const [isAIModalOpen, setAIModalOpen] = useState(false);
   
   // Modal States
@@ -105,13 +107,15 @@ const Home: React.FC = () => {
                currentView === 'reports' ? 'Analytics & Financial Insights' :
                currentView === 'pos' ? 'Process sales transactions' :
                currentView === 'settings' ? 'System Configuration' :
+               currentView === 'team' ? 'Staff & Roles' :
+               currentView === 'customers' ? 'CRM & Loyalty' :
                'Manage your retail operations'}
             </p>
           </div>
 
           <div className="flex items-center gap-3">
              {/* Location Switcher - Hide on global views like Settings */}
-             {!['reports', 'settings', 'suppliers'].includes(currentView) && (
+             {!['reports', 'settings', 'suppliers', 'team', 'customers'].includes(currentView) && (
                <div className="flex flex-col items-end">
                  {currentView === 'pos' && selectedLocationId === 'all' && (
                    <span className="text-[10px] text-amber-600 font-bold uppercase mb-0.5 animate-pulse">Select Store Location</span>
@@ -288,6 +292,14 @@ const Home: React.FC = () => {
 
           {currentView === 'orders' && (
              <PurchaseOrdersView />
+          )}
+
+          {currentView === 'team' && (
+             <TeamView />
+          )}
+
+          {currentView === 'customers' && (
+             <CustomersView />
           )}
 
           {currentView === 'settings' && (

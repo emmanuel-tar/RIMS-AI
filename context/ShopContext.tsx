@@ -1,7 +1,7 @@
 
-import React, { createContext, useContext, useState, ReactNode, useMemo } from 'react';
-import { InventoryItem, Transaction, DashboardStats, Location, Supplier, PurchaseOrder, StoreSettings } from '../types';
-import { MOCK_INVENTORY, MOCK_LOCATIONS, MOCK_SUPPLIERS } from '../constants';
+import React, { createContext, useContext, useState, ReactNode, useMemo, useEffect } from 'react';
+import { InventoryItem, Transaction, DashboardStats, Location, Supplier, PurchaseOrder, StoreSettings, Employee, Customer } from '../types';
+import { MOCK_INVENTORY, MOCK_LOCATIONS, MOCK_SUPPLIERS, MOCK_EMPLOYEES, MOCK_CUSTOMERS } from '../constants';
 
 interface InventoryContextType {
   inventory: InventoryItem[];
@@ -9,6 +9,8 @@ interface InventoryContextType {
   transactions: Transaction[];
   suppliers: Supplier[];
   purchaseOrders: PurchaseOrder[];
+  employees: Employee[];
+  customers: Customer[];
   stats: DashboardStats;
   settings: StoreSettings;
   updateSettings: (settings: Partial<StoreSettings>) => void;
@@ -19,7 +21,7 @@ interface InventoryContextType {
   adjustStock: (id: string, locationId: string, quantityChange: number, reason: string) => void;
   transferStock: (itemId: string, fromLocationId: string, toLocationId: string, quantity: number) => void;
   commitAudit: (locationId: string, adjustments: { itemId: string, systemQty: number, countedQty: number }[]) => void;
-  processSale: (locationId: string, items: { itemId: string, quantity: number }[]) => void;
+  processSale: (locationId: string, items: { itemId: string, quantity: number }[], customerId?: string, discount?: number) => void;
   
   // Suppliers & POs
   addSupplier: (supplier: Omit<Supplier, 'id'>) => void;
@@ -28,19 +30,33 @@ interface InventoryContextType {
   receivePurchaseOrder: (id: string, locationId: string) => void;
   updatePurchaseOrderStatus: (id: string, status: PurchaseOrder['status']) => void;
 
+  // Employees & CRM
+  addEmployee: (emp: Omit<Employee, 'id'>) => void;
+  updateEmployee: (id: string, updates: Partial<Employee>) => void;
+  addCustomer: (cust: Omit<Customer, 'id' | 'loyaltyPoints' | 'totalSpent'>) => void;
+  updateCustomer: (id: string, updates: Partial<Customer>) => void;
+
   searchQuery: string;
   setSearchQuery: (q: string) => void;
   exportData: () => void;
+  getPriceForLocation: (item: InventoryItem, locationId: string) => number;
 }
 
 const InventoryContext = createContext<InventoryContextType | undefined>(undefined);
 
 export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [inventory, setInventory] = useState<InventoryItem[]>(MOCK_INVENTORY);
+  const [inventory, setInventory] = useState<InventoryItem[]>(() => {
+    const saved = localStorage.getItem('rims_inventory');
+    return saved ? JSON.parse(saved) : MOCK_INVENTORY;
+  });
+  
   const [locations, setLocations] = useState<Location[]>(MOCK_LOCATIONS);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>(MOCK_SUPPLIERS);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>(MOCK_EMPLOYEES);
+  const [customers, setCustomers] = useState<Customer[]>(MOCK_CUSTOMERS);
+  
   const [searchQuery, setSearchQuery] = useState('');
   
   const [settings, setSettings] = useState<StoreSettings>({
@@ -50,6 +66,11 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     supportEmail: 'admin@rims.local'
   });
 
+  // Persistence effect
+  useEffect(() => {
+    localStorage.setItem('rims_inventory', JSON.stringify(inventory));
+  }, [inventory]);
+
   const stats = useMemo(() => {
     return {
       totalItems: inventory.reduce((acc, item) => acc + item.stockQuantity, 0),
@@ -58,6 +79,13 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       categories: new Set(inventory.map(i => i.category)).size
     };
   }, [inventory]);
+
+  const getPriceForLocation = (item: InventoryItem, locationId: string): number => {
+    if (item.locationPrices && item.locationPrices[locationId]) {
+      return item.locationPrices[locationId];
+    }
+    return item.sellingPrice;
+  };
 
   const updateSettings = (updates: Partial<StoreSettings>) => {
     setSettings(prev => ({ ...prev, ...updates }));
@@ -218,13 +246,17 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     setTransactions(prev => [...newTransactions, ...prev]);
   };
 
-  const processSale = (locationId: string, items: { itemId: string, quantity: number }[]) => {
+  const processSale = (locationId: string, items: { itemId: string, quantity: number }[], customerId?: string, discountPercent?: number) => {
     const timestamp = new Date().toISOString();
-    
+    let totalSaleValue = 0;
+
     // Batch update stock
     setInventory(prev => prev.map(item => {
       const saleItem = items.find(i => i.itemId === item.id);
       if (saleItem) {
+        const itemPrice = getPriceForLocation(item, locationId);
+        totalSaleValue += itemPrice * saleItem.quantity;
+
         const currentLocStock = item.stockDistribution[locationId] || 0;
         const newLocStock = Math.max(0, currentLocStock - saleItem.quantity);
         
@@ -247,13 +279,30 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       type: 'SALE',
       itemId: item.itemId,
       quantity: item.quantity,
-      reason: 'POS Transaction',
+      reason: `POS Transaction ${discountPercent ? `(${discountPercent}% off)` : ''}`,
       timestamp,
       userName: 'Staff',
-      locationId: locationId
+      locationId: locationId,
+      customerId
     }));
 
     setTransactions(prev => [...newTransactions, ...prev]);
+
+    // Update Customer Loyalty
+    if (customerId) {
+      // Calculate final sale value after discount for points
+      const discountedValue = discountPercent ? totalSaleValue * (1 - discountPercent / 100) : totalSaleValue;
+      const pointsEarned = Math.floor(discountedValue); // 1 point per dollar
+      
+      setCustomers(prev => prev.map(c => 
+        c.id === customerId ? {
+          ...c,
+          totalSpent: c.totalSpent + discountedValue,
+          loyaltyPoints: c.loyaltyPoints + pointsEarned,
+          lastVisit: timestamp
+        } : c
+      ));
+    }
   };
 
   // --- Suppliers & POs ---
@@ -299,6 +348,25 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
        }
     });
   };
+
+  // --- Employees & CRM ---
+  const addEmployee = (emp: Omit<Employee, 'id'>) => {
+    const newEmp = { ...emp, id: `emp-${Date.now()}` };
+    setEmployees(prev => [...prev, newEmp]);
+  };
+
+  const updateEmployee = (id: string, updates: Partial<Employee>) => {
+    setEmployees(prev => prev.map(e => e.id === id ? { ...e, ...updates } : e));
+  };
+
+  const addCustomer = (cust: Omit<Customer, 'id' | 'loyaltyPoints' | 'totalSpent'>) => {
+    const newCust = { ...cust, id: `cust-${Date.now()}`, loyaltyPoints: 0, totalSpent: 0 };
+    setCustomers(prev => [...prev, newCust]);
+  };
+
+  const updateCustomer = (id: string, updates: Partial<Customer>) => {
+    setCustomers(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
+  };
   
   const exportData = () => {
     const headers = ['SKU', 'Name', 'Category', 'Cost Price', 'Selling Price', 'Total Stock', 'Supplier', 'Last Updated'];
@@ -333,6 +401,8 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       transactions,
       suppliers,
       purchaseOrders,
+      employees,
+      customers,
       stats,
       settings,
       updateSettings,
@@ -349,9 +419,14 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       createPurchaseOrder,
       receivePurchaseOrder,
       updatePurchaseOrderStatus,
+      addEmployee,
+      updateEmployee,
+      addCustomer,
+      updateCustomer,
       searchQuery,
       setSearchQuery,
-      exportData
+      exportData,
+      getPriceForLocation
     }}>
       {children}
     </InventoryContext.Provider>
@@ -364,6 +439,7 @@ export const useInventory = () => {
   return context;
 };
 
+// Dummy hook for legacy components
 export const useShop = () => {
   return {
     cart: [] as any[],

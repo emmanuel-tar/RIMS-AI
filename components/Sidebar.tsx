@@ -1,10 +1,10 @@
 
 import React from 'react';
-import { LayoutDashboard, Package, Settings, Sparkles, LogOut, BarChart3, ClipboardCheck, ShoppingCart, Users, Truck } from 'lucide-react';
+import { LayoutDashboard, Package, Settings, Sparkles, LogOut, BarChart3, ClipboardCheck, ShoppingCart, Users, Truck, Contact } from 'lucide-react';
 
 interface SidebarProps {
-  currentView: 'dashboard' | 'inventory' | 'audit' | 'reports' | 'pos' | 'suppliers' | 'orders' | 'settings';
-  onChangeView: (view: 'dashboard' | 'inventory' | 'audit' | 'reports' | 'pos' | 'suppliers' | 'orders' | 'settings') => void;
+  currentView: 'dashboard' | 'inventory' | 'audit' | 'reports' | 'pos' | 'suppliers' | 'orders' | 'settings' | 'team' | 'customers';
+  onChangeView: (view: any) => void;
   onOpenAI: () => void;
 }
 
@@ -53,6 +53,16 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, onOpenAI }
         </button>
 
         <button
+          onClick={() => onChangeView('customers')}
+          className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+            currentView === 'customers' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+          }`}
+        >
+          <Contact size={20} />
+          Customers
+        </button>
+
+        <button
           onClick={() => onChangeView('suppliers')}
           className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
             currentView === 'suppliers' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
@@ -90,6 +100,16 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, onOpenAI }
         >
           <BarChart3 size={20} />
           Reports
+        </button>
+
+        <button
+          onClick={() => onChangeView('team')}
+          className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+            currentView === 'team' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+          }`}
+        >
+          <Users size={20} />
+          Team
         </button>
 
         <div className="pt-4 mt-4 border-t border-slate-800">

@@ -1,5 +1,5 @@
 
-import { InventoryItem, Category, Location, Supplier } from './types';
+import { InventoryItem, Category, Location, Supplier, Employee, Customer } from './types';
 
 export const MOCK_LOCATIONS: Location[] = [
   { id: 'loc-1', name: 'Main Warehouse', type: 'WAREHOUSE', address: '123 Logistics Way' },
@@ -52,6 +52,61 @@ export const MOCK_SUPPLIERS: Supplier[] = [
     phone: '555-0105',
     address: '654 Corp Park, Austin, TX',
     rating: 4.0
+  }
+];
+
+export const MOCK_EMPLOYEES: Employee[] = [
+  {
+    id: 'emp-1',
+    name: 'Alice Manager',
+    email: 'alice@rims.local',
+    role: 'ADMIN',
+    status: 'ACTIVE'
+  },
+  {
+    id: 'emp-2',
+    name: 'Bob Cashier',
+    email: 'bob@rims.local',
+    role: 'CASHIER',
+    assignedLocationId: 'loc-2',
+    status: 'ACTIVE'
+  },
+  {
+    id: 'emp-3',
+    name: 'Charlie Stock',
+    email: 'charlie@rims.local',
+    role: 'MANAGER',
+    assignedLocationId: 'loc-1',
+    status: 'ACTIVE'
+  }
+];
+
+export const MOCK_CUSTOMERS: Customer[] = [
+  {
+    id: 'cust-1',
+    name: 'Jane Doe',
+    email: 'jane@example.com',
+    phone: '555-1234',
+    loyaltyPoints: 120,
+    totalSpent: 450.50,
+    lastVisit: '2023-10-15T10:30:00Z'
+  },
+  {
+    id: 'cust-2',
+    name: 'John Smith',
+    phone: '555-5678',
+    loyaltyPoints: 45,
+    totalSpent: 120.00,
+    lastVisit: '2023-11-01T14:20:00Z'
+  },
+  {
+    id: 'cust-3',
+    name: 'VIP Client',
+    email: 'vip@example.com',
+    phone: '555-9999',
+    loyaltyPoints: 1500,
+    totalSpent: 5200.00,
+    lastVisit: '2023-11-05T09:15:00Z'
   }
 ];
 

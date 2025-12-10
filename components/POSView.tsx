@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, CheckCircle, PackageX } from 'lucide-react';
+import { Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, CheckCircle, PackageX, User, Users, Tag } from 'lucide-react';
 import { useInventory } from '../context/ShopContext';
 import { InventoryItem, Category } from '../types';
 
@@ -9,11 +9,15 @@ interface CartItem extends InventoryItem {
 }
 
 const POSView: React.FC<{ locationId: string }> = ({ locationId }) => {
-  const { inventory, locations, processSale } = useInventory();
+  const { inventory, locations, processSale, customers, getPriceForLocation } = useInventory();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState<string>('All');
   const [showSuccess, setShowSuccess] = useState(false);
+  
+  // Checkout State
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
+  const [discountPercent, setDiscountPercent] = useState<number>(0);
 
   // If locationId is 'all', default to the first location for sales logic
   const activeLocationId = locationId === 'all' ? locations[0]?.id : locationId;
@@ -52,17 +56,30 @@ const POSView: React.FC<{ locationId: string }> = ({ locationId }) => {
     setCart(prev => prev.filter(i => i.id !== id));
   };
 
-  const cartTotal = cart.reduce((acc, item) => acc + (item.sellingPrice * item.cartQty), 0);
+  // Calculations
+  const subtotal = cart.reduce((acc, item) => {
+    const price = getPriceForLocation(item, activeLocationId);
+    return acc + (price * item.cartQty);
+  }, 0);
+  
+  const discountAmount = (subtotal * discountPercent) / 100;
+  const total = subtotal - discountAmount;
+  const loyaltyPointsEarned = Math.floor(total); // 1 point per $1
 
   const handleCheckout = () => {
     if (cart.length === 0) return;
     
     processSale(
       activeLocationId,
-      cart.map(i => ({ itemId: i.id, quantity: i.cartQty }))
+      cart.map(i => ({ itemId: i.id, quantity: i.cartQty })),
+      selectedCustomerId || undefined,
+      discountPercent > 0 ? discountPercent : undefined
     );
     
+    // Reset
     setCart([]);
+    setSelectedCustomerId('');
+    setDiscountPercent(0);
     setShowSuccess(true);
     setTimeout(() => setShowSuccess(false), 2000);
   };
@@ -103,6 +120,8 @@ const POSView: React.FC<{ locationId: string }> = ({ locationId }) => {
           <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {products.map(item => {
                const stock = item.stockDistribution[activeLocationId] || 0;
+               const price = getPriceForLocation(item, activeLocationId);
+               
                return (
                  <button
                    key={item.id}
@@ -120,7 +139,7 @@ const POSView: React.FC<{ locationId: string }> = ({ locationId }) => {
                    </h3>
                    <p className="text-xs text-slate-400 mb-3">{item.sku}</p>
                    <div className="mt-auto flex items-center justify-between">
-                      <span className="text-lg font-bold text-slate-900">${item.sellingPrice.toFixed(2)}</span>
+                      <span className="text-lg font-bold text-slate-900">${price.toFixed(2)}</span>
                       <div className="bg-indigo-50 text-indigo-600 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
                         <Plus size={16} />
                       </div>
@@ -159,54 +178,94 @@ const POSView: React.FC<{ locationId: string }> = ({ locationId }) => {
                <p className="text-sm">Scan an item or select from list to start a sale.</p>
              </div>
            ) : (
-             cart.map(item => (
-               <div key={item.id} className="flex gap-3 bg-white p-3 rounded-lg border border-slate-100 shadow-sm">
-                  <div className="flex-1">
-                     <p className="font-medium text-slate-800 text-sm line-clamp-1">{item.name}</p>
-                     <p className="text-xs text-slate-500 mb-2">{item.sku}</p>
-                     <div className="flex items-center gap-2">
-                        <button 
-                          onClick={() => updateQty(item.id, -1)}
-                          className="p-1 hover:bg-slate-100 rounded text-slate-500"
-                        >
-                          <Minus size={14} />
-                        </button>
-                        <span className="text-sm font-bold w-6 text-center">{item.cartQty}</span>
-                        <button 
-                          onClick={() => updateQty(item.id, 1)}
-                          className="p-1 hover:bg-slate-100 rounded text-slate-500"
-                        >
-                          <Plus size={14} />
-                        </button>
-                     </div>
-                  </div>
-                  <div className="flex flex-col justify-between items-end">
-                     <p className="font-bold text-slate-900">${(item.sellingPrice * item.cartQty).toFixed(2)}</p>
-                     <button 
-                       onClick={() => removeFromCart(item.id)}
-                       className="text-red-400 hover:text-red-600 p-1"
-                     >
-                       <Trash2 size={14} />
-                     </button>
-                  </div>
-               </div>
-             ))
+             cart.map(item => {
+                const price = getPriceForLocation(item, activeLocationId);
+                return (
+                 <div key={item.id} className="flex gap-3 bg-white p-3 rounded-lg border border-slate-100 shadow-sm">
+                    <div className="flex-1">
+                       <p className="font-medium text-slate-800 text-sm line-clamp-1">{item.name}</p>
+                       <p className="text-xs text-slate-500 mb-2">{item.sku}</p>
+                       <div className="flex items-center gap-2">
+                          <button 
+                            onClick={() => updateQty(item.id, -1)}
+                            className="p-1 hover:bg-slate-100 rounded text-slate-500"
+                          >
+                            <Minus size={14} />
+                          </button>
+                          <span className="text-sm font-bold w-6 text-center">{item.cartQty}</span>
+                          <button 
+                            onClick={() => updateQty(item.id, 1)}
+                            className="p-1 hover:bg-slate-100 rounded text-slate-500"
+                          >
+                            <Plus size={14} />
+                          </button>
+                       </div>
+                    </div>
+                    <div className="flex flex-col justify-between items-end">
+                       <p className="font-bold text-slate-900">${(price * item.cartQty).toFixed(2)}</p>
+                       <button 
+                         onClick={() => removeFromCart(item.id)}
+                         className="text-red-400 hover:text-red-600 p-1"
+                       >
+                         <Trash2 size={14} />
+                       </button>
+                    </div>
+                 </div>
+                );
+             })
            )}
         </div>
 
-        {/* Totals Section */}
+        {/* Action & Totals Section */}
         <div className="p-4 bg-slate-50 border-t border-slate-200 space-y-3">
-           <div className="flex justify-between text-sm text-slate-600">
-             <span>Subtotal</span>
-             <span>${cartTotal.toFixed(2)}</span>
+           {/* Customer Select */}
+           <div className="relative">
+             <User size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+             <select 
+               value={selectedCustomerId}
+               onChange={(e) => setSelectedCustomerId(e.target.value)}
+               className="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white"
+             >
+                <option value="">Walk-in Customer</option>
+                {customers.map(c => (
+                  <option key={c.id} value={c.id}>{c.name} ({c.loyaltyPoints} pts)</option>
+                ))}
+             </select>
            </div>
-           <div className="flex justify-between text-sm text-slate-600">
-             <span>Tax (0%)</span>
-             <span>$0.00</span>
+
+           {/* Discount */}
+           <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Tag size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input 
+                  type="number"
+                  placeholder="Discount %"
+                  min="0" max="100"
+                  value={discountPercent || ''}
+                  onChange={(e) => setDiscountPercent(Math.min(100, Math.max(0, Number(e.target.value))))}
+                  className="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div className="flex items-center justify-center bg-indigo-100 text-indigo-700 px-3 rounded-lg text-xs font-bold">
+                 +{loyaltyPointsEarned} pts
+              </div>
            </div>
-           <div className="flex justify-between text-lg font-bold text-slate-900 pt-2 border-t border-slate-200">
-             <span>Total</span>
-             <span>${cartTotal.toFixed(2)}</span>
+
+           <div className="border-t border-slate-200 pt-2 space-y-1">
+              <div className="flex justify-between text-sm text-slate-600">
+                <span>Subtotal</span>
+                <span>${subtotal.toFixed(2)}</span>
+              </div>
+              {discountPercent > 0 && (
+                <div className="flex justify-between text-sm text-green-600">
+                  <span>Discount ({discountPercent}%)</span>
+                  <span>-${discountAmount.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-lg font-bold text-slate-900 pt-1">
+                <span>Total</span>
+                <span>${total.toFixed(2)}</span>
+              </div>
            </div>
            
            <div className="grid grid-cols-2 gap-3 pt-2">

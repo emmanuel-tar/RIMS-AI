@@ -4,10 +4,13 @@ import { Plus, Eye, CheckCircle, Clock, AlertCircle, FileText, PackageCheck } fr
 import { useInventory } from '../context/ShopContext';
 import { PurchaseOrder } from '../types';
 import PurchaseOrderModal from './PurchaseOrderModal';
+import ReceivePOModal from './ReceivePOModal';
 
 const PurchaseOrdersView: React.FC = () => {
-  const { purchaseOrders, suppliers, receivePurchaseOrder } = useInventory();
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const { purchaseOrders, suppliers } = useInventory();
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isReceiveModalOpen, setIsReceiveModalOpen] = useState(false);
+  const [selectedPO, setSelectedPO] = useState<PurchaseOrder | null>(null);
 
   const getSupplierName = (id: string) => suppliers.find(s => s.id === id)?.name || 'Unknown Supplier';
 
@@ -21,15 +24,9 @@ const PurchaseOrdersView: React.FC = () => {
     }
   };
 
-  const handleReceive = (poId: string) => {
-    // For simplicity, default to first location or ask user. 
-    // In this UI, we'll prompt for location ID in a real scenario, but here hardcode to first location or just trigger.
-    // The context function signature is receivePurchaseOrder(id: string, locationId: string)
-    // We will assume loc-1 for this simplified view or use a prompt.
-    const locId = prompt("Enter Location ID to receive stock into (e.g. loc-1):", "loc-1");
-    if (locId) {
-      receivePurchaseOrder(poId, locId);
-    }
+  const handleOpenReceive = (po: PurchaseOrder) => {
+    setSelectedPO(po);
+    setIsReceiveModalOpen(true);
   };
 
   return (
@@ -41,7 +38,7 @@ const PurchaseOrdersView: React.FC = () => {
           <p className="text-sm text-slate-500">Track incoming stock and manage supplier orders.</p>
         </div>
         <button 
-          onClick={() => setIsModalOpen(true)}
+          onClick={() => setIsCreateModalOpen(true)}
           className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors shadow-sm"
         >
           <Plus size={18} />
@@ -86,7 +83,7 @@ const PurchaseOrdersView: React.FC = () => {
                        </button>
                        {po.status === 'ORDERED' && (
                          <button 
-                           onClick={() => handleReceive(po.id)}
+                           onClick={() => handleOpenReceive(po)}
                            className="p-1.5 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded" 
                            title="Receive Stock"
                          >
@@ -109,7 +106,8 @@ const PurchaseOrdersView: React.FC = () => {
         </div>
       </div>
 
-      <PurchaseOrderModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
+      <PurchaseOrderModal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} />
+      <ReceivePOModal isOpen={isReceiveModalOpen} onClose={() => setIsReceiveModalOpen(false)} purchaseOrder={selectedPO} />
     </div>
   );
 };

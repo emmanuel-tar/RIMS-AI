@@ -35,6 +35,8 @@ export interface InventoryItem {
   lowStockThreshold: number;
   supplier: string;
   lastUpdated: string;
+  expiryDate?: string;
+  locationPrices?: Record<string, number>; // locationId -> price override
 }
 
 export interface Transaction {
@@ -47,6 +49,7 @@ export interface Transaction {
   userName: string;
   locationId?: string; // Primary location affected
   toLocationId?: string; // For transfers
+  customerId?: string;
 }
 
 export interface AuditSession {
@@ -99,5 +102,26 @@ export interface PurchaseOrder {
   dateExpected?: string;
   items: { itemId: string; quantity: number; costPrice: number }[];
   totalCost: number;
+  notes?: string;
+}
+
+export interface Employee {
+  id: string;
+  name: string;
+  email: string;
+  role: 'ADMIN' | 'MANAGER' | 'CASHIER';
+  assignedLocationId?: string; // If restricted to one location
+  phone?: string;
+  status: 'ACTIVE' | 'INACTIVE';
+}
+
+export interface Customer {
+  id: string;
+  name: string;
+  email?: string;
+  phone: string;
+  loyaltyPoints: number;
+  totalSpent: number;
+  lastVisit?: string;
   notes?: string;
 }
