@@ -1,4 +1,5 @@
 
+
 export enum Category {
   Electronics = 'Electronics',
   Clothing = 'Clothing',
@@ -22,6 +23,13 @@ export interface CloudSettings {
   lastSync?: string;
 }
 
+export interface HardwareSettings {
+  receiptPrinterWidth: '58mm' | '80mm';
+  autoPrintReceipt: boolean;
+  labelSize: 'standard' | 'small'; // 2x1 inch vs smaller
+  showCashDrawerButton: boolean;
+}
+
 export type SyncStatus = 'CONNECTED' | 'DISCONNECTED' | 'SYNCING' | 'ERROR';
 
 export type FeatureModule = 'CRM' | 'TEAM' | 'SUPPLIERS' | 'MULTI_LOCATION' | 'CLOUD' | 'AI_ASSISTANT' | 'REPORTS' | 'FINANCE';
@@ -35,6 +43,7 @@ export interface StoreSettings {
   loyaltyEarnRate?: number; // Spend amount to earn 1 point
   loyaltyRedeemRate?: number; // Value of 1 point
   cloud?: CloudSettings;
+  hardware: HardwareSettings;
   features: Record<FeatureModule, boolean>;
 }
 
@@ -65,6 +74,8 @@ export interface InventoryItem {
   batches?: InventoryBatch[];
 }
 
+export type PaymentMethod = 'CASH' | 'CARD';
+
 export interface Transaction {
   id: string;
   type: 'SALE' | 'RESTOCK' | 'ADJUSTMENT' | 'TRANSFER' | 'AUDIT';
@@ -76,6 +87,16 @@ export interface Transaction {
   locationId?: string; // Primary location affected
   toLocationId?: string; // For transfers
   customerId?: string;
+  paymentMethod?: PaymentMethod;
+}
+
+export interface HeldOrder {
+  id: string;
+  timestamp: string;
+  items: { itemId: string; quantity: number }[];
+  customerId?: string;
+  discountPercent?: number;
+  note?: string;
 }
 
 export interface AuditSession {
@@ -162,4 +183,20 @@ export interface Expense {
   locationId: string;
   recordedBy: string;
   supplierId?: string;
+}
+
+export interface CashShift {
+  id: string;
+  locationId: string;
+  openedBy: string; // Employee Name
+  closedBy?: string;
+  startTime: string;
+  endTime?: string;
+  startAmount: number; // Opening Float
+  endAmount?: number; // Physical Count at close
+  expectedAmount?: number; // startAmount + Cash Sales
+  status: 'OPEN' | 'CLOSED';
+  cashSales: number;
+  cardSales: number; // For reporting, though not affecting cash drawer
+  notes?: string;
 }

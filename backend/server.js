@@ -115,6 +115,23 @@ function initializeTables() {
       notes TEXT,
       invoiceNumber TEXT
     )`);
+
+    // Cash Shifts Table (NEW)
+    db.run(`CREATE TABLE IF NOT EXISTS cash_shifts (
+      id TEXT PRIMARY KEY,
+      locationId TEXT,
+      openedBy TEXT,
+      closedBy TEXT,
+      startTime TEXT,
+      endTime TEXT,
+      startAmount REAL,
+      endAmount REAL,
+      expectedAmount REAL,
+      status TEXT,
+      cashSales REAL,
+      cardSales REAL,
+      notes TEXT
+    )`);
   });
 }
 
@@ -262,6 +279,32 @@ app.post('/api/purchase_orders', (req, res) => {
     (err) => {
       if (err) return res.status(500).json({ error: err.message });
       res.json({ message: 'PO saved', id: po.id });
+    }
+  );
+  stmt.finalize();
+});
+
+// Cash Shift Routes
+app.get('/api/cash_shifts', (req, res) => {
+  db.all("SELECT * FROM cash_shifts ORDER BY startTime DESC LIMIT 50", [], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json(rows);
+  });
+});
+
+app.post('/api/cash_shifts', (req, res) => {
+  const shift = req.body;
+  const stmt = db.prepare(`
+    INSERT OR REPLACE INTO cash_shifts (id, locationId, openedBy, closedBy, startTime, endTime, startAmount, endAmount, expectedAmount, status, cashSales, cardSales, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  stmt.run(
+    shift.id, shift.locationId, shift.openedBy, shift.closedBy, shift.startTime, shift.endTime, 
+    shift.startAmount, shift.endAmount, shift.expectedAmount, shift.status, 
+    shift.cashSales, shift.cardSales, shift.notes,
+    (err) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ message: 'Shift saved', id: shift.id });
     }
   );
   stmt.finalize();

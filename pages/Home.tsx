@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { Plus, Search } from 'lucide-react';
 import { useInventory } from '../context/ShopContext';
@@ -188,7 +189,7 @@ const Home: React.FC = () => {
           {currentView === 'inventory' && (
             <InventoryTable 
               onEdit={handleEdit} 
-              onAdjust={handleAdjust}
+              onAdjust={handleAdjust} 
               onTransfer={handleTransfer}
               selectedLocationId={selectedLocationId}
             />

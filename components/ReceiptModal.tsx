@@ -1,8 +1,8 @@
 
 import React from 'react';
 import { X, Printer, CheckCircle, Store } from 'lucide-react';
-import { Transaction, InventoryItem, StoreSettings } from '../types';
 import { useInventory } from '../context/ShopContext';
+import { printReceipt } from '../services/printService';
 
 interface ReceiptModalProps {
   isOpen: boolean;
@@ -22,6 +22,19 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({
 
   if (!isOpen) return null;
 
+  const handlePrint = () => {
+    printReceipt({
+      transactionId,
+      items: cartItems,
+      subtotal,
+      discount,
+      total,
+      customerName,
+      storeSettings: settings,
+      cashierName: currentUser?.name || 'Staff'
+    });
+  };
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
@@ -38,7 +51,7 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({
            </button>
         </div>
 
-        {/* Receipt Content - Scrollable */}
+        {/* Receipt Preview */}
         <div className="flex-1 overflow-y-auto p-6 bg-white">
            <div className="border border-slate-200 p-4 rounded-sm shadow-sm bg-white mx-auto max-w-[320px]">
               {/* Receipt Header */}
@@ -79,35 +92,10 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({
                      <span>-${discount.toFixed(2)}</span>
                    </div>
                  )}
-                 <div className="flex justify-between text-slate-600">
-                   <span>Tax (Included)</span>
-                   <span>${(subtotal * settings.taxRate).toFixed(2)}</span>
-                 </div>
                  <div className="flex justify-between text-lg font-bold text-slate-900 mt-2 pt-2 border-t border-slate-200">
                    <span>Total</span>
                    <span>${total.toFixed(2)}</span>
                  </div>
-              </div>
-
-              {customerName && (
-                <div className="mt-4 pt-3 border-t border-dashed border-slate-300 text-center">
-                  <p className="text-xs text-slate-500">Customer: {customerName}</p>
-                </div>
-              )}
-
-              {/* Footer */}
-              <div className="mt-6 text-center">
-                 <div className="flex flex-col items-center gap-1">
-                   {/* Barcode Mock */}
-                   <div className="h-8 w-48 flex items-end gap-[1px] justify-center opacity-70">
-                      {Array.from({length: 40}).map((_, i) => (
-                        <div key={i} className="bg-black" style={{ width: Math.random() > 0.5 ? '2px' : '4px', height: '100%' }} />
-                      ))}
-                   </div>
-                   <p className="text-[10px] text-slate-400 mt-1">{transactionId}</p>
-                 </div>
-                 <p className="text-xs font-medium text-slate-800 mt-4">Thank you for shopping with us!</p>
-                 <p className="text-[10px] text-slate-400">No returns without receipt.</p>
               </div>
            </div>
         </div>
@@ -121,7 +109,7 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({
              Close
            </button>
            <button 
-             onClick={() => window.print()}
+             onClick={handlePrint}
              className="flex-1 py-2.5 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 flex items-center justify-center gap-2 shadow-sm"
            >
              <Printer size={18} />

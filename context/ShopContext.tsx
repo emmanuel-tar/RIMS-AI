@@ -1,9 +1,13 @@
 
 import React, { createContext, useContext, useState, ReactNode, useMemo, useEffect } from 'react';
-import { InventoryItem, Transaction, DashboardStats, Location, Supplier, PurchaseOrder, StoreSettings, Employee, Customer, CloudSettings, SyncStatus, FeatureModule, Expense, InventoryBatch, Product } from '../types';
+import { InventoryItem, Transaction, DashboardStats, Location, Supplier, PurchaseOrder, StoreSettings, Employee, Customer, CloudSettings, SyncStatus, FeatureModule, Expense, InventoryBatch, Product, HeldOrder, CashShift, PaymentMethod } from '../types';
 import { MOCK_INVENTORY, MOCK_LOCATIONS, MOCK_SUPPLIERS, MOCK_EMPLOYEES, MOCK_CUSTOMERS, MOCK_EXPENSES } from '../constants';
 
-const SERVER_URL = 'http://localhost:3001/api';
+// Dynamic Server URL: Checks LocalStorage first (set via Settings), else defaults to localhost
+const getBaseUrl = () => {
+  const stored = localStorage.getItem('rims_server_url');
+  return stored || 'http://localhost:3001/api';
+};
 
 interface InventoryContextType {
   inventory: InventoryItem[];
@@ -17,6 +21,7 @@ interface InventoryContextType {
   stats: DashboardStats;
   settings: StoreSettings;
   currentUser: Employee | null;
+  heldOrders: HeldOrder[];
   
   // Cloud & Sync
   syncStatus: SyncStatus;
@@ -38,7 +43,7 @@ interface InventoryContextType {
   adjustStock: (id: string, locationId: string, quantityChange: number, reason: string) => void;
   transferStock: (itemId: string, fromLocationId: string, toLocationId: string, quantity: number) => void;
   commitAudit: (locationId: string, adjustments: { itemId: string, systemQty: number, countedQty: number }[]) => void;
-  processSale: (locationId: string, items: { itemId: string, quantity: number }[], customerId?: string, discount?: number, pointsRedeemed?: number) => Transaction;
+  processSale: (locationId: string, items: { itemId: string, quantity: number }[], customerId?: string, discount?: number, pointsRedeemed?: number, note?: string, paymentMethod?: PaymentMethod) => Transaction;
   
   // Suppliers & POs
   addSupplier: (supplier: Omit<Supplier, 'id'>) => void;
@@ -56,18 +61,33 @@ interface InventoryContextType {
   // Expenses
   addExpense: (expense: Omit<Expense, 'id'>) => void;
   deleteExpense: (id: string) => void;
+  
+  // Held Orders
+  holdOrder: (order: Omit<HeldOrder, 'id' | 'timestamp'>) => void;
+  deleteHeldOrder: (id: string) => void;
+  
+  // Cash Management
+  currentShift: CashShift | null;
+  openShift: (startAmount: number, locationId: string) => void;
+  closeShift: (endAmount: number, notes?: string) => void;
 
   searchQuery: string;
   setSearchQuery: (q: string) => void;
   exportData: () => void;
   getPriceForLocation: (item: InventoryItem, locationId: string) => number;
   generateSku: (category: string) => string;
+  
+  // Network Config
+  serverUrl: string;
+  setServerUrl: (url: string) => void;
 }
 
 const InventoryContext = createContext<InventoryContextType | undefined>(undefined);
 
 export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   // --- STATE ---
+  const [serverUrl, setServerUrlState] = useState(getBaseUrl());
+  
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -76,6 +96,11 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [locations, setLocations] = useState<Location[]>(MOCK_LOCATIONS);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
+  const [heldOrders, setHeldOrders] = useState<HeldOrder[]>([]);
+  
+  // Cash Shift State
+  const [cashShifts, setCashShifts] = useState<CashShift[]>([]);
+  const [currentShift, setCurrentShift] = useState<CashShift | null>(null);
   
   const [currentUser, setCurrentUser] = useState<Employee | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('DISCONNECTED');
@@ -96,6 +121,12 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       storeId: '',
       apiKey: ''
     },
+    hardware: {
+      receiptPrinterWidth: '80mm',
+      autoPrintReceipt: true,
+      labelSize: 'standard',
+      showCashDrawerButton: true
+    },
     features: {
       CRM: true,
       TEAM: true,
@@ -108,14 +139,21 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     }
   });
 
+  // Helper to update server URL and reload to apply
+  const setServerUrl = (url: string) => {
+    localStorage.setItem('rims_server_url', url);
+    setServerUrlState(url);
+    window.location.reload(); // Force reload to reconnect
+  };
+
   // --- API HELPERS ---
   const fetchFromServer = async (endpoint: string) => {
     try {
-      const res = await fetch(`${SERVER_URL}/${endpoint}`);
+      const res = await fetch(`${serverUrl}/${endpoint}`);
       if (!res.ok) throw new Error('Network response was not ok');
       return await res.json();
     } catch (error) {
-      console.warn(`Failed to fetch ${endpoint} from local server.`);
+      console.warn(`Failed to fetch ${endpoint} from ${serverUrl}`);
       return null;
     }
   };
@@ -123,7 +161,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   const postToServer = async (endpoint: string, data: any) => {
     if (!isLocalServerConnected) return;
     try {
-      await fetch(`${SERVER_URL}/${endpoint}`, {
+      await fetch(`${serverUrl}/${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
@@ -138,20 +176,22 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     const initializeData = async () => {
       // 1. Check for Local Node Server
       try {
-        const health = await fetch(`${SERVER_URL}/health`);
+        const health = await fetch(`${serverUrl}/health`);
         if (health.ok) {
           setIsLocalServerConnected(true);
-          console.log("🔗 Connected to Local Node.js Database");
+          console.log(`🔗 Connected to Database at ${serverUrl}`);
+          setSyncStatus('CONNECTED');
           
           // Load from Server
-          const [inv, tx, sup, emp, cust, exp, pos] = await Promise.all([
+          const [inv, tx, sup, emp, cust, exp, pos, shifts] = await Promise.all([
             fetchFromServer('inventory'),
             fetchFromServer('transactions'),
             fetchFromServer('suppliers'),
             fetchFromServer('employees'),
             fetchFromServer('customers'),
             fetchFromServer('expenses'),
-            fetchFromServer('purchase_orders')
+            fetchFromServer('purchase_orders'),
+            fetchFromServer('cash_shifts')
           ]);
 
           if (inv) setInventory(inv);
@@ -161,11 +201,18 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
           if (cust) setCustomers(cust);
           if (exp) setExpenses(exp);
           if (pos) setPurchaseOrders(pos);
+          if (shifts) {
+             setCashShifts(shifts);
+             // Find open shift
+             const open = shifts.find((s: CashShift) => s.status === 'OPEN');
+             if(open) setCurrentShift(open);
+          }
           
           return; // Exit if server loaded
         }
       } catch (e) {
-        console.log("⚠️ Local Node Server not detected. Using Browser Storage.");
+        console.log(`⚠️ Database not detected at ${serverUrl}. Using Browser Storage.`);
+        setSyncStatus('DISCONNECTED');
       }
 
       // 2. Fallback to LocalStorage
@@ -179,15 +226,26 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       
       const savedPOs = localStorage.getItem('rims_pos');
       if (savedPOs) setPurchaseOrders(JSON.parse(savedPOs));
+      
+      const savedShifts = localStorage.getItem('rims_shifts');
+      if(savedShifts) {
+         const parsed = JSON.parse(savedShifts);
+         setCashShifts(parsed);
+         const open = parsed.find((s: CashShift) => s.status === 'OPEN');
+         if(open) setCurrentShift(open);
+      }
     };
 
     initializeData();
 
-    // Load User Session
+    // Load User Session & Held Orders
     const savedUser = localStorage.getItem('rims_user');
     if (savedUser) setCurrentUser(JSON.parse(savedUser));
+    
+    const savedHeld = localStorage.getItem('rims_held_orders');
+    if (savedHeld) setHeldOrders(JSON.parse(savedHeld));
 
-  }, []);
+  }, [serverUrl]);
 
   // --- PERSISTENCE EFFECT (Local Storage Fallback) ---
   useEffect(() => {
@@ -201,6 +259,16 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       localStorage.setItem('rims_pos', JSON.stringify(purchaseOrders));
     }
   }, [purchaseOrders, isLocalServerConnected]);
+  
+  useEffect(() => {
+    localStorage.setItem('rims_held_orders', JSON.stringify(heldOrders));
+  }, [heldOrders]);
+  
+  useEffect(() => {
+    if(!isLocalServerConnected) {
+        localStorage.setItem('rims_shifts', JSON.stringify(cashShifts));
+    }
+  }, [cashShifts, isLocalServerConnected]);
 
   // --- COMPUTED STATS ---
   const stats = useMemo(() => {
@@ -261,11 +329,18 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   const triggerSync = async () => {
-    if (!settings.cloud?.enabled) return;
-    setSyncStatus('SYNCING');
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    updateCloudSettings({ lastSync: new Date().toISOString() });
-    setSyncStatus('CONNECTED');
+    // Re-check connection
+    try {
+        const health = await fetch(`${serverUrl}/health`);
+        if(health.ok) {
+            setSyncStatus('CONNECTED');
+            window.location.reload();
+        } else {
+            setSyncStatus('ERROR');
+        }
+    } catch(e) {
+        setSyncStatus('ERROR');
+    }
   };
 
   const addLocation = (locationData: Omit<Location, 'id'>) => {
@@ -317,7 +392,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   const deleteItem = (id: string) => {
     setInventory(prev => prev.filter(item => item.id !== id));
     if (isLocalServerConnected) {
-       fetch(`${SERVER_URL}/inventory/${id}`, { method: 'DELETE' });
+       fetch(`${serverUrl}/inventory/${id}`, { method: 'DELETE' });
     }
   };
 
@@ -371,7 +446,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     const transaction: Transaction = {
       id: Date.now().toString(),
-      type: quantityChange > 0 ? 'RESTOCK' : (reason.toLowerCase().includes('sale') ? 'SALE' : 'ADJUSTMENT'),
+      type: quantityChange > 0 ? 'RESTOCK' : (reason.toLowerCase().includes('sale') ? 'SALE' : (reason === 'Audit Correction' ? 'AUDIT' : 'ADJUSTMENT')),
       itemId: id,
       quantity: Math.abs(quantityChange),
       reason,
@@ -392,7 +467,10 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   const commitAudit = (locationId: string, adjustments: { itemId: string, systemQty: number, countedQty: number }[]) => {
     adjustments.forEach(adj => {
-       adjustStock(adj.itemId, locationId, adj.countedQty - adj.systemQty, 'Audit Correction');
+       const diff = adj.countedQty - adj.systemQty;
+       if (diff !== 0) {
+           adjustStock(adj.itemId, locationId, diff, 'Audit Correction');
+       }
     });
   };
 
@@ -401,7 +479,9 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     items: { itemId: string, quantity: number }[], 
     customerId?: string, 
     discountPercent?: number, 
-    pointsRedeemed?: number
+    pointsRedeemed?: number, 
+    note?: string,
+    paymentMethod: PaymentMethod = 'CASH'
   ): Transaction => {
     const timestamp = new Date().toISOString();
     let totalSaleValue = 0;
@@ -411,6 +491,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     // Calculate Master ID
     const masterTxId = `TX-${Date.now()}`;
+    const txReason = `POS Sale (${paymentMethod}) ${discountPercent ? `(-${discountPercent}%)` : ''} ${note ? `| Note: ${note}` : ''}`;
 
     // 1. Prepare Inventory Updates
     setInventory(prev => prev.map(item => {
@@ -459,11 +540,12 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         type: 'SALE',
         itemId: item.itemId,
         quantity: item.quantity,
-        reason: `POS Sale ${discountPercent ? `(-${discountPercent}%)` : ''}`,
+        reason: txReason,
         timestamp,
         userName: currentUser?.name || 'Staff',
         locationId: locationId,
-        customerId
+        customerId,
+        paymentMethod
       });
     });
 
@@ -492,9 +574,21 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       }));
     }
 
-    // 4. Send Batch to Server
+    // 4. Update Shift (if open)
+    if (currentShift && currentShift.locationId === locationId && currentShift.status === 'OPEN') {
+       const updatedShift = {
+          ...currentShift,
+          cashSales: paymentMethod === 'CASH' ? currentShift.cashSales + finalTotal : currentShift.cashSales,
+          cardSales: paymentMethod === 'CARD' ? currentShift.cardSales + finalTotal : currentShift.cardSales
+       };
+       setCurrentShift(updatedShift);
+       setCashShifts(prev => prev.map(s => s.id === updatedShift.id ? updatedShift : s));
+       if (isLocalServerConnected) postToServer('cash_shifts', updatedShift);
+    }
+
+    // 5. Send Batch to Server
     if (isLocalServerConnected) {
-      fetch(`${SERVER_URL}/sales`, {
+      fetch(`${serverUrl}/sales`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -505,7 +599,59 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       });
     }
 
-    return { id: masterTxId, type: 'SALE', itemId: 'MULTI', quantity: items.length, timestamp, userName: currentUser?.name || 'Staff', locationId };
+    return { id: masterTxId, type: 'SALE', itemId: 'MULTI', quantity: items.length, timestamp, userName: currentUser?.name || 'Staff', locationId, paymentMethod };
+  };
+
+  // --- HELD ORDERS ---
+  const holdOrder = (orderData: Omit<HeldOrder, 'id' | 'timestamp'>) => {
+    const newHold: HeldOrder = {
+      ...orderData,
+      id: `hold-${Date.now()}`,
+      timestamp: new Date().toISOString()
+    };
+    setHeldOrders(prev => [newHold, ...prev]);
+  };
+
+  const deleteHeldOrder = (id: string) => {
+    setHeldOrders(prev => prev.filter(o => o.id !== id));
+  };
+  
+  // --- CASH SHIFTS ---
+  const openShift = (startAmount: number, locationId: string) => {
+    const newShift: CashShift = {
+       id: `shift-${Date.now()}`,
+       locationId,
+       openedBy: currentUser?.name || 'Staff',
+       startTime: new Date().toISOString(),
+       startAmount,
+       status: 'OPEN',
+       cashSales: 0,
+       cardSales: 0
+    };
+    setCurrentShift(newShift);
+    setCashShifts(prev => [newShift, ...prev]);
+    if(isLocalServerConnected) postToServer('cash_shifts', newShift);
+  };
+  
+  const closeShift = (endAmount: number, notes?: string) => {
+    if(!currentShift) return;
+    
+    // Expected = Start + Sales. (Expenses could be subtracted here if tracked as cash payouts)
+    const expectedAmount = currentShift.startAmount + currentShift.cashSales;
+    
+    const closedShift: CashShift = {
+       ...currentShift,
+       closedBy: currentUser?.name || 'Staff',
+       endTime: new Date().toISOString(),
+       endAmount,
+       expectedAmount,
+       notes,
+       status: 'CLOSED'
+    };
+    
+    setCashShifts(prev => prev.map(s => s.id === currentShift.id ? closedShift : s));
+    setCurrentShift(null);
+    if(isLocalServerConnected) postToServer('cash_shifts', closedShift);
   };
 
   // --- ENTITY CRUD (Generic) ---
@@ -546,7 +692,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
   const deleteExpense = (id: string) => {
     setExpenses(prev => prev.filter(e => e.id !== id));
-    if (isLocalServerConnected) fetch(`${SERVER_URL}/expenses/${id}`, { method: 'DELETE' });
+    if (isLocalServerConnected) fetch(`${serverUrl}/expenses/${id}`, { method: 'DELETE' });
   };
 
   const createPurchaseOrder = (poData: any) => {
@@ -611,11 +757,13 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   return (
     <InventoryContext.Provider value={{
       inventory, locations, transactions, suppliers, purchaseOrders, employees, customers, expenses, stats, settings, currentUser, syncStatus,
-      isLocalServerConnected,
+      isLocalServerConnected, heldOrders,
       triggerSync, updateCloudSettings, login, logout, updateSettings, toggleFeature, addLocation, addItem, updateItem, deleteItem,
       adjustStock, transferStock, commitAudit, processSale, addSupplier, updateSupplier, createPurchaseOrder, receivePurchaseOrder,
       updatePurchaseOrderStatus, addEmployee, updateEmployee, addCustomer, updateCustomer, addExpense, deleteExpense,
-      searchQuery, setSearchQuery, exportData, getPriceForLocation, generateSku
+      holdOrder, deleteHeldOrder,
+      searchQuery, setSearchQuery, exportData, getPriceForLocation, generateSku, serverUrl, setServerUrl,
+      currentShift, openShift, closeShift
     }}>
       {children}
     </InventoryContext.Provider>

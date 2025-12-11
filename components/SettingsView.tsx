@@ -1,17 +1,18 @@
 
 import React, { useState } from 'react';
-import { Save, Building, MapPin, Database, Download, Plus, Trash2, Cloud, Wifi, WifiOff, Key, Globe, LayoutGrid } from 'lucide-react';
+import { Save, Building, MapPin, Database, Download, Plus, Trash2, Cloud, Wifi, WifiOff, Key, Globe, LayoutGrid, Server, Printer, Scan } from 'lucide-react';
 import { useInventory } from '../context/ShopContext';
 import { Location } from '../types';
 
 const SettingsView: React.FC = () => {
-  const { settings, updateSettings, updateCloudSettings, locations, addLocation, exportData, syncStatus, triggerSync } = useInventory();
-  const [activeTab, setActiveTab] = useState<'general' | 'locations' | 'cloud' | 'data'>('general');
+  const { settings, updateSettings, updateCloudSettings, locations, addLocation, exportData, syncStatus, triggerSync, serverUrl, setServerUrl, isLocalServerConnected } = useInventory();
+  const [activeTab, setActiveTab] = useState<'general' | 'locations' | 'cloud' | 'hardware' | 'data'>('general');
 
   // Local state for new location form
   const [newLocName, setNewLocName] = useState('');
   const [newLocAddress, setNewLocAddress] = useState('');
   const [newLocType, setNewLocType] = useState<'STORE' | 'WAREHOUSE'>('STORE');
+  const [localServerIp, setLocalServerIp] = useState(serverUrl);
 
   const handleGeneralSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,6 +30,17 @@ const SettingsView: React.FC = () => {
       setNewLocName('');
       setNewLocAddress('');
     }
+  };
+
+  const handleSaveNetwork = () => {
+    setServerUrl(localServerIp);
+    alert("Server URL Updated. The app will reload to connect.");
+  };
+  
+  const updateHardware = (key: keyof typeof settings.hardware, value: any) => {
+      updateSettings({
+          hardware: { ...settings.hardware, [key]: value }
+      });
   };
 
   return (
@@ -75,16 +87,23 @@ const SettingsView: React.FC = () => {
              </button>
            )}
 
-           {settings.features.CLOUD && (
-             <button 
-               onClick={() => setActiveTab('cloud')}
-               className={`pb-3 px-4 pt-3 text-sm font-medium transition-colors border-b-2 ${
-                 activeTab === 'cloud' ? 'border-indigo-600 text-indigo-600 bg-indigo-50/50' : 'border-transparent text-slate-500 hover:text-slate-700'
-               }`}
-             >
-               Cloud & Network
-             </button>
-           )}
+           <button 
+             onClick={() => setActiveTab('cloud')}
+             className={`pb-3 px-4 pt-3 text-sm font-medium transition-colors border-b-2 ${
+               activeTab === 'cloud' ? 'border-indigo-600 text-indigo-600 bg-indigo-50/50' : 'border-transparent text-slate-500 hover:text-slate-700'
+             }`}
+           >
+             Cloud & Network
+           </button>
+           
+           <button 
+             onClick={() => setActiveTab('hardware')}
+             className={`pb-3 px-4 pt-3 text-sm font-medium transition-colors border-b-2 ${
+               activeTab === 'hardware' ? 'border-indigo-600 text-indigo-600 bg-indigo-50/50' : 'border-transparent text-slate-500 hover:text-slate-700'
+             }`}
+           >
+             Hardware & Peripherals
+           </button>
 
            <button 
              onClick={() => setActiveTab('data')}
@@ -175,7 +194,6 @@ const SettingsView: React.FC = () => {
                              <MapPin size={12} /> {loc.address}
                           </p>
                         </div>
-                        {/* Note: Delete logic is complex due to stock dependency, omitted for MVP */}
                      </div>
                    ))}
                  </div>
@@ -229,52 +247,61 @@ const SettingsView: React.FC = () => {
         )}
 
         {/* Cloud Tab */}
-        {activeTab === 'cloud' && settings.features.CLOUD && (
+        {activeTab === 'cloud' && (
            <div className="p-6 max-w-2xl space-y-8">
-              <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-lg flex items-start gap-4">
-                 <div className="bg-indigo-100 p-2 rounded-full text-indigo-600">
-                    <Cloud size={24} />
+              {/* Local Network Config */}
+              <div className="bg-slate-50 border border-slate-200 p-4 rounded-lg flex items-start gap-4">
+                 <div className="bg-slate-200 p-2 rounded-full text-slate-600">
+                    <Server size={24} />
                  </div>
-                 <div>
-                    <h3 className="font-bold text-indigo-900">Head Office Connection</h3>
-                    <p className="text-sm text-indigo-700 mt-1">
-                       Connect this branch to your central RIMS Cloud server to sync inventory, sales, and purchasing data in real-time.
+                 <div className="flex-1">
+                    <h3 className="font-bold text-slate-900">Local Network Server</h3>
+                    <p className="text-sm text-slate-600 mt-1 mb-3">
+                       Enter the IP Address of the main computer hosting the database (e.g., http://192.168.1.5:3001/api).
                     </p>
+                    <div className="flex gap-2">
+                       <input 
+                         type="text" 
+                         value={localServerIp}
+                         onChange={(e) => setLocalServerIp(e.target.value)}
+                         className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                         placeholder="http://localhost:3001/api"
+                       />
+                       <button 
+                         onClick={handleSaveNetwork}
+                         className="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-medium hover:bg-slate-700"
+                       >
+                         Connect
+                       </button>
+                    </div>
+                    <div className="mt-2 flex items-center gap-2">
+                       <div className={`w-2 h-2 rounded-full ${isLocalServerConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+                       <span className="text-xs font-medium text-slate-500">
+                         {isLocalServerConnected ? 'Database Connected' : 'Running in Offline Mode (Browser Storage)'}
+                       </span>
+                    </div>
                  </div>
               </div>
 
-              <div className="space-y-4">
-                 <div className="flex items-center gap-3 py-2">
-                    <span className="text-sm font-medium text-slate-700">Connection Status:</span>
-                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${
-                       syncStatus === 'CONNECTED' ? 'bg-green-100 text-green-700' :
-                       syncStatus === 'SYNCING' ? 'bg-blue-100 text-blue-700' :
-                       'bg-red-100 text-red-700'
-                    }`}>
-                       {syncStatus === 'CONNECTED' ? <Wifi size={14} className="mr-1" /> : <WifiOff size={14} className="mr-1" />}
-                       {syncStatus}
-                    </span>
-                    {settings.cloud?.lastSync && (
-                       <span className="text-xs text-slate-400">Last synced: {new Date(settings.cloud.lastSync).toLocaleTimeString()}</span>
-                    )}
-                 </div>
-
-                 <div className="space-y-4 pt-4 border-t border-slate-100">
-                    <div>
+              {settings.features.CLOUD && (
+                <div className="space-y-4 pt-4 border-t border-slate-100 opacity-75">
+                   <div className="flex items-center gap-2 mb-2">
+                     <Cloud size={18} className="text-indigo-600" />
+                     <h3 className="font-bold text-indigo-900">Cloud Sync (SaaS)</h3>
+                   </div>
+                   
+                   <div>
                        <label className="block text-sm font-medium text-slate-700 mb-1">API Endpoint</label>
-                       <div className="relative">
-                          <Globe size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                          <input 
-                             type="text" 
-                             value={settings.cloud?.apiEndpoint || ''}
-                             onChange={(e) => updateCloudSettings({ apiEndpoint: e.target.value })}
-                             className="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500"
-                             placeholder="https://api.rims-cloud.com/v1"
-                          />
-                       </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-4">
+                       <input 
+                           type="text" 
+                           value={settings.cloud?.apiEndpoint || ''}
+                           onChange={(e) => updateCloudSettings({ apiEndpoint: e.target.value })}
+                           className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500"
+                           placeholder="https://api.rims-cloud.com/v1"
+                       />
+                   </div>
+                   
+                   <div className="grid grid-cols-2 gap-4">
                        <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Store ID</label>
                           <input 
@@ -287,41 +314,80 @@ const SettingsView: React.FC = () => {
                        </div>
                        <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">API Key</label>
-                          <div className="relative">
-                             <Key size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                             <input 
+                          <input 
                                 type="password" 
                                 value={settings.cloud?.apiKey || ''}
                                 onChange={(e) => updateCloudSettings({ apiKey: e.target.value })}
-                                className="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500"
+                                className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500"
                                 placeholder="••••••••••••"
                              />
-                          </div>
                        </div>
-                    </div>
-                    
-                    <div className="flex items-center gap-2 mt-2">
-                       <input 
-                          type="checkbox" 
-                          id="autoSync"
-                          checked={settings.cloud?.enabled || false}
-                          onChange={(e) => updateCloudSettings({ enabled: e.target.checked })}
-                          className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
-                       />
-                       <label htmlFor="autoSync" className="text-sm text-slate-700">Enable Automatic Synchronization</label>
-                    </div>
-                 </div>
-
-                 <div className="pt-4 flex gap-3">
-                    <button 
-                       onClick={triggerSync}
-                       disabled={!settings.cloud?.enabled || syncStatus === 'SYNCING'}
-                       className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                    >
-                       {syncStatus === 'SYNCING' ? 'Syncing...' : 'Test Connection & Sync'}
-                    </button>
-                 </div>
-              </div>
+                   </div>
+                   <button disabled className="mt-2 px-6 py-2 bg-indigo-100 text-indigo-400 rounded-lg font-medium cursor-not-allowed">
+                       Sync Feature Coming Soon
+                   </button>
+                </div>
+              )}
+           </div>
+        )}
+        
+        {/* Hardware Tab */}
+        {activeTab === 'hardware' && (
+           <div className="p-6 max-w-2xl space-y-8">
+               <div className="flex items-start gap-4">
+                  <div className="bg-orange-100 p-2 rounded-full text-orange-600">
+                     <Printer size={24} />
+                  </div>
+                  <div className="flex-1 space-y-4">
+                     <div>
+                        <h3 className="font-bold text-slate-900">Receipt Printer Configuration</h3>
+                        <p className="text-sm text-slate-600">Adjust settings for your thermal printer.</p>
+                     </div>
+                     
+                     <div className="grid grid-cols-2 gap-4">
+                        <div>
+                           <label className="block text-sm font-medium text-slate-700 mb-1">Paper Width</label>
+                           <select 
+                             value={settings.hardware.receiptPrinterWidth} 
+                             onChange={(e) => updateHardware('receiptPrinterWidth', e.target.value)}
+                             className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500"
+                           >
+                              <option value="80mm">Standard (80mm)</option>
+                              <option value="58mm">Narrow (58mm)</option>
+                           </select>
+                        </div>
+                        <div className="flex items-center pt-6">
+                           <label className="flex items-center gap-2 cursor-pointer">
+                              <input 
+                                type="checkbox" 
+                                checked={settings.hardware.autoPrintReceipt}
+                                onChange={(e) => updateHardware('autoPrintReceipt', e.target.checked)}
+                                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                              />
+                              <span className="text-sm text-slate-700">Auto-print receipt on sale</span>
+                           </label>
+                        </div>
+                     </div>
+                  </div>
+               </div>
+               
+               <div className="border-t border-slate-100 pt-6 flex items-start gap-4">
+                  <div className="bg-blue-100 p-2 rounded-full text-blue-600">
+                     <Scan size={24} />
+                  </div>
+                  <div className="flex-1 space-y-4">
+                     <div>
+                        <h3 className="font-bold text-slate-900">Barcode Scanner (HID)</h3>
+                        <p className="text-sm text-slate-600">
+                           The system automatically detects input from standard USB/Bluetooth barcode scanners that act as a keyboard.
+                           Ensure your scanner is configured to add an "Enter" key after scanning.
+                        </p>
+                     </div>
+                     <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 text-sm text-blue-800">
+                        <strong>Status:</strong> Global listener is active. You can scan items on the POS screen without clicking the search box.
+                     </div>
+                  </div>
+               </div>
            </div>
         )}
 
