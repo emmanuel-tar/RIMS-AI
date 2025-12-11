@@ -5,7 +5,7 @@ import { useInventory } from '../context/ShopContext';
 import { Expense } from '../types';
 
 const ExpensesView: React.FC = () => {
-  const { expenses, locations, suppliers, inventory, transactions, addExpense, deleteExpense, currentUser } = useInventory();
+  const { expenses, locations, suppliers, inventory, transactions, addExpense, deleteExpense, currentUser, formatCurrency } = useInventory();
   const [isModalOpen, setIsModalOpen] = useState(false);
   
   // Form State
@@ -78,21 +78,21 @@ const ExpensesView: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Revenue</p>
-            <p className="text-2xl font-bold text-slate-800 mt-1">${financials.totalRevenue.toLocaleString()}</p>
+            <p className="text-2xl font-bold text-slate-800 mt-1">{formatCurrency(financials.totalRevenue)}</p>
          </div>
          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">COGS</p>
-            <p className="text-2xl font-bold text-slate-600 mt-1">${financials.totalCOGS.toLocaleString()}</p>
+            <p className="text-2xl font-bold text-slate-600 mt-1">{formatCurrency(financials.totalCOGS)}</p>
          </div>
          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Expenses</p>
-            <p className="text-2xl font-bold text-red-600 mt-1">${financials.totalExpenses.toLocaleString()}</p>
+            <p className="text-2xl font-bold text-red-600 mt-1">{formatCurrency(financials.totalExpenses)}</p>
          </div>
          <div className={`p-4 rounded-xl border shadow-sm ${financials.netProfit >= 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
             <p className={`text-xs font-semibold uppercase tracking-wider ${financials.netProfit >= 0 ? 'text-green-700' : 'text-red-700'}`}>Net Profit</p>
             <div className="flex items-center gap-2 mt-1">
                <p className={`text-2xl font-bold ${financials.netProfit >= 0 ? 'text-green-700' : 'text-red-700'}`}>
-                 ${financials.netProfit.toLocaleString()}
+                 {formatCurrency(financials.netProfit)}
                </p>
                {financials.netProfit >= 0 ? <TrendingUp size={20} className="text-green-600" /> : <TrendingDown size={20} className="text-red-600" />}
             </div>
@@ -154,7 +154,7 @@ const ExpensesView: React.FC = () => {
                     {expense.recordedBy}
                   </td>
                   <td className="px-6 py-4 text-right text-sm font-bold text-slate-800">
-                    -${expense.amount.toFixed(2)}
+                    -{formatCurrency(expense.amount)}
                   </td>
                   <td className="px-6 py-4 text-center">
                     <button 

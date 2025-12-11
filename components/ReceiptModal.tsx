@@ -11,14 +11,15 @@ interface ReceiptModalProps {
   cartItems: { name: string; sku: string; qty: number; price: number }[];
   subtotal: number;
   discount: number;
+  tax: number;
   total: number;
   customerName?: string;
 }
 
 const ReceiptModal: React.FC<ReceiptModalProps> = ({ 
-  isOpen, onClose, transactionId, cartItems, subtotal, discount, total, customerName 
+  isOpen, onClose, transactionId, cartItems, subtotal, discount, tax, total, customerName 
 }) => {
-  const { settings, currentUser } = useInventory();
+  const { settings, currentUser, formatCurrency } = useInventory();
 
   if (!isOpen) return null;
 
@@ -28,6 +29,7 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({
       items: cartItems,
       subtotal,
       discount,
+      tax,
       total,
       customerName,
       storeSettings: settings,
@@ -73,9 +75,9 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({
                    <div key={idx} className="flex justify-between">
                       <div className="flex-1 pr-2">
                         <span className="block text-slate-800 font-medium">{item.name}</span>
-                        <span className="text-[10px] text-slate-500">{item.qty} x ${item.price.toFixed(2)}</span>
+                        <span className="text-[10px] text-slate-500">{item.qty} x {formatCurrency(item.price)}</span>
                       </div>
-                      <span className="text-slate-900 font-medium">${(item.qty * item.price).toFixed(2)}</span>
+                      <span className="text-slate-900 font-medium">{formatCurrency(item.qty * item.price)}</span>
                    </div>
                  ))}
               </div>
@@ -84,17 +86,23 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({
               <div className="border-t border-dashed border-slate-300 pt-3 space-y-1 text-sm">
                  <div className="flex justify-between text-slate-600">
                    <span>Subtotal</span>
-                   <span>${subtotal.toFixed(2)}</span>
+                   <span>{formatCurrency(subtotal)}</span>
                  </div>
                  {discount > 0 && (
                    <div className="flex justify-between text-slate-600">
                      <span>Discount</span>
-                     <span>-${discount.toFixed(2)}</span>
+                     <span>-{formatCurrency(discount)}</span>
+                   </div>
+                 )}
+                 {tax > 0 && (
+                   <div className="flex justify-between text-slate-600">
+                     <span>Tax ({(settings.taxRate * 100).toFixed(1)}%)</span>
+                     <span>{formatCurrency(tax)}</span>
                    </div>
                  )}
                  <div className="flex justify-between text-lg font-bold text-slate-900 mt-2 pt-2 border-t border-slate-200">
                    <span>Total</span>
-                   <span>${total.toFixed(2)}</span>
+                   <span>{formatCurrency(total)}</span>
                  </div>
               </div>
            </div>

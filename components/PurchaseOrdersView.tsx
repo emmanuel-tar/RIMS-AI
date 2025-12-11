@@ -7,7 +7,7 @@ import PurchaseOrderModal from './PurchaseOrderModal';
 import ReceivePOModal from './ReceivePOModal';
 
 const PurchaseOrdersView: React.FC = () => {
-  const { purchaseOrders, suppliers } = useInventory();
+  const { purchaseOrders, suppliers, formatCurrency } = useInventory();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isReceiveModalOpen, setIsReceiveModalOpen] = useState(false);
   const [selectedPO, setSelectedPO] = useState<PurchaseOrder | null>(null);
@@ -71,7 +71,7 @@ const PurchaseOrdersView: React.FC = () => {
                     </span>
                   </td>
                   <td className="px-6 py-4 text-right text-sm font-semibold text-slate-900">
-                    ${po.totalCost.toLocaleString()}
+                    {formatCurrency(po.totalCost)}
                   </td>
                   <td className="px-6 py-4 text-right text-sm text-slate-500">
                     {new Date(po.dateCreated).toLocaleDateString()}

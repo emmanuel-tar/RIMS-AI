@@ -15,7 +15,7 @@ interface ProductModalProps {
 }
 
 const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSubmit, initialData, isAdjustment }) => {
-  const { locations, generateSku } = useInventory();
+  const { locations, generateSku, settings } = useInventory();
   const [activeTab, setActiveTab] = useState<'details' | 'pricing' | 'batches'>('details');
   
   // Form state
@@ -422,7 +422,7 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSubmit, 
                       <h4 className="font-bold text-indigo-900 text-sm">Location-Specific Pricing</h4>
                       <p className="text-xs text-indigo-700 mt-1">
                         Set different selling prices for warehouses or specific store branches. 
-                        Leave the field blank to use the Base Selling Price (${formData.sellingPrice || 0}).
+                        Leave the field blank to use the Base Selling Price ({settings.currencySymbol}{(formData.sellingPrice || 0).toFixed(2)}).
                       </p>
                     </div>
                   </div>
@@ -443,7 +443,7 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSubmit, 
                           <div className="text-right">
                              <p className="text-[10px] text-slate-400 uppercase tracking-wider">Override Price</p>
                              <div className="relative">
-                               <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+                               <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-sm">{settings.currencySymbol}</span>
                                <input 
                                  type="number" 
                                  step="0.01"

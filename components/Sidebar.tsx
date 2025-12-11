@@ -1,16 +1,18 @@
 
 
+
 import React from 'react';
-import { LayoutDashboard, Package, Settings, Sparkles, LogOut, BarChart3, ClipboardCheck, ShoppingCart, Users, Truck, Contact, Wifi, WifiOff, RefreshCw, LayoutGrid, History, Wallet } from 'lucide-react';
+import { LayoutDashboard, Package, Settings, Sparkles, LogOut, BarChart3, ClipboardCheck, ShoppingCart, Users, Truck, Contact, Wifi, WifiOff, RefreshCw, LayoutGrid, History, Wallet, Command } from 'lucide-react';
 import { useInventory } from '../context/ShopContext';
 
 interface SidebarProps {
   currentView: 'dashboard' | 'inventory' | 'audit' | 'reports' | 'pos' | 'suppliers' | 'orders' | 'settings' | 'team' | 'customers' | 'marketplace' | 'activity' | 'expenses';
   onChangeView: (view: any) => void;
   onOpenAI: () => void;
+  onOpenCommandPalette: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, onOpenAI }) => {
+const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, onOpenAI, onOpenCommandPalette }) => {
   const { currentUser, logout, syncStatus, settings, triggerSync } = useInventory();
   
   const isManagerOrAdmin = currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
@@ -34,6 +36,17 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, onOpenAI }
       </div>
 
       <nav className="flex-1 p-4 space-y-2 overflow-y-auto scrollbar-hide">
+        {/* Quick Search Trigger */}
+        <button 
+           onClick={onOpenCommandPalette}
+           className="w-full flex items-center justify-between px-3 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-400 text-sm mb-4 border border-slate-700 transition-colors"
+        >
+           <span className="flex items-center gap-2">
+             <Command size={14} /> Search
+           </span>
+           <kbd className="hidden sm:inline-block px-1.5 py-0.5 text-[10px] font-sans font-semibold text-slate-500 bg-slate-900 border border-slate-700 rounded">Ctrl K</kbd>
+        </button>
+
         <button
           onClick={() => onChangeView('dashboard')}
           className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${

@@ -7,13 +7,49 @@ import {
 import { useInventory } from '../context/ShopContext';
 import { Transaction } from '../types';
 
-const DashboardView: React.FC<{ onNavigate: (view: any) => void }> = ({ onNavigate }) => {
-  const { stats, inventory, transactions, locations, expenses } = useInventory();
+interface DashboardViewProps {
+  onNavigate: (view: any) => void;
+  selectedLocationId: string;
+}
+
+const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, selectedLocationId }) => {
+  const { inventory, transactions, locations, expenses, formatCurrency } = useInventory();
   const [hoveredBar, setHoveredBar] = useState<number | null>(null);
+
+  // --- Derived Data based on Location Filter ---
+
+  const filteredTransactions = useMemo(() => {
+    if (selectedLocationId === 'all') return transactions;
+    return transactions.filter(t => t.locationId === selectedLocationId);
+  }, [transactions, selectedLocationId]);
+
+  const filteredExpenses = useMemo(() => {
+    if (selectedLocationId === 'all') return expenses;
+    return expenses.filter(e => e.locationId === selectedLocationId);
+  }, [expenses, selectedLocationId]);
+
+  // Calculate Local Stats
+  const dashboardStats = useMemo(() => {
+     const totalValue = inventory.reduce((acc, item) => {
+        const stock = selectedLocationId === 'all' 
+          ? item.stockQuantity 
+          : (item.stockDistribution[selectedLocationId] || 0);
+        return acc + (stock * item.sellingPrice);
+     }, 0);
+
+     const lowStockCount = inventory.filter(item => {
+        const stock = selectedLocationId === 'all' 
+          ? item.stockQuantity 
+          : (item.stockDistribution[selectedLocationId] || 0);
+        return stock <= item.lowStockThreshold;
+     }).length;
+
+     return { totalValue, lowStockCount };
+  }, [inventory, selectedLocationId]);
 
   // --- Data Processing for Charts ---
 
-  // 1. Sales Trend (Last 7 Days)
+  // 1. Sales Trend (Last 7 Days) using Filtered Transactions
   const salesData = useMemo(() => {
     const last7Days = Array.from({ length: 7 }, (_, i) => {
       const d = new Date();
@@ -22,7 +58,7 @@ const DashboardView: React.FC<{ onNavigate: (view: any) => void }> = ({ onNaviga
     });
 
     return last7Days.map(date => {
-      const dailyTotal = transactions
+      const dailyTotal = filteredTransactions
         .filter(t => t.type === 'SALE' && t.timestamp.startsWith(date))
         .reduce((sum, t) => {
            // Find item to get price
@@ -32,28 +68,33 @@ const DashboardView: React.FC<{ onNavigate: (view: any) => void }> = ({ onNaviga
       
       return { date: date.split('-').slice(1).join('/'), value: dailyTotal, fullDate: date };
     });
-  }, [transactions, inventory]);
+  }, [filteredTransactions, inventory]);
 
   const maxSales = Math.max(...salesData.map(d => d.value), 100); // Prevent divide by zero
 
-  // 2. Recent Activity
+  // 2. Recent Activity using Filtered Transactions
   const recentActivity = useMemo(() => {
-    return transactions.slice(0, 5);
-  }, [transactions]);
+    return filteredTransactions.slice(0, 5);
+  }, [filteredTransactions]);
 
-  // 3. Low Stock Items
+  // 3. Low Stock Items (Filtered by Location Stock)
   const lowStockItems = useMemo(() => {
-    return inventory.filter(item => item.stockQuantity <= item.lowStockThreshold).slice(0, 5);
-  }, [inventory]);
+    return inventory.filter(item => {
+        const stock = selectedLocationId === 'all' 
+          ? item.stockQuantity 
+          : (item.stockDistribution[selectedLocationId] || 0);
+        return stock <= item.lowStockThreshold;
+    }).slice(0, 5);
+  }, [inventory, selectedLocationId]);
   
   // 4. Financial Snapshot
-  const totalRevenue = transactions.filter(t => t.type === 'SALE').reduce((sum, t) => {
+  const totalRevenue = filteredTransactions.filter(t => t.type === 'SALE').reduce((sum, t) => {
       const item = inventory.find(i => i.id === t.itemId);
       return sum + (t.quantity * (item?.sellingPrice || 0));
   }, 0);
   
-  const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
-  const netProfit = totalRevenue - totalExpenses; // Simplified: Revenue - Expenses. (Should technically include COGS)
+  const totalExpenses = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
+  const netProfit = totalRevenue - totalExpenses;
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -64,7 +105,7 @@ const DashboardView: React.FC<{ onNavigate: (view: any) => void }> = ({ onNaviga
           <div>
             <p className="text-sm font-medium text-slate-500">Net Profit</p>
             <h3 className={`text-2xl font-bold mt-2 ${netProfit >= 0 ? 'text-slate-900' : 'text-red-600'}`}>
-              ${netProfit.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              {formatCurrency(netProfit)}
             </h3>
             <span className="text-xs text-green-600 flex items-center gap-1 mt-1 font-medium bg-green-50 w-fit px-2 py-0.5 rounded-full">
               <TrendingUp size={12} /> Revenue - Expenses
@@ -79,7 +120,7 @@ const DashboardView: React.FC<{ onNavigate: (view: any) => void }> = ({ onNaviga
            <div>
             <p className="text-sm font-medium text-slate-500">Total Expenses</p>
             <h3 className="text-2xl font-bold text-slate-900 mt-2">
-              ${totalExpenses.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              {formatCurrency(totalExpenses)}
             </h3>
             <span className="text-xs text-slate-400 mt-1 block">
               Operational costs
@@ -96,14 +137,14 @@ const DashboardView: React.FC<{ onNavigate: (view: any) => void }> = ({ onNaviga
         >
            <div>
             <p className="text-sm font-medium text-slate-500">Low Stock Alerts</p>
-            <h3 className={`text-2xl font-bold mt-2 ${stats.lowStockCount > 0 ? 'text-red-600' : 'text-slate-900'}`}>
-              {stats.lowStockCount}
+            <h3 className={`text-2xl font-bold mt-2 ${dashboardStats.lowStockCount > 0 ? 'text-red-600' : 'text-slate-900'}`}>
+              {dashboardStats.lowStockCount}
             </h3>
             <span className="text-xs text-red-600 mt-1 block">
               Items below threshold
             </span>
           </div>
-          <div className={`p-3 rounded-lg ${stats.lowStockCount > 0 ? 'bg-red-50 text-red-600 group-hover:bg-red-100' : 'bg-slate-50 text-slate-600'}`}>
+          <div className={`p-3 rounded-lg ${dashboardStats.lowStockCount > 0 ? 'bg-red-50 text-red-600 group-hover:bg-red-100' : 'bg-slate-50 text-slate-600'}`}>
             <AlertTriangle size={20} />
           </div>
         </div>
@@ -112,7 +153,7 @@ const DashboardView: React.FC<{ onNavigate: (view: any) => void }> = ({ onNaviga
            <div>
             <p className="text-sm font-medium text-slate-500">Inventory Value</p>
             <h3 className="text-2xl font-bold text-slate-900 mt-2">
-              ${stats.totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              {formatCurrency(dashboardStats.totalValue)}
             </h3>
             <span className="text-xs text-slate-400 mt-1 block">
               Asset valuation
@@ -151,7 +192,7 @@ const DashboardView: React.FC<{ onNavigate: (view: any) => void }> = ({ onNaviga
                   >
                     {/* Tooltip */}
                     <div className={`absolute -top-10 bg-slate-800 text-white text-xs py-1 px-2 rounded transition-opacity duration-200 ${hoveredBar === index ? 'opacity-100' : 'opacity-0'}`}>
-                      ${data.value.toFixed(2)}
+                      {formatCurrency(data.value)}
                     </div>
 
                     <div className="w-full bg-slate-100 rounded-t-md relative h-full flex items-end overflow-hidden">
@@ -175,7 +216,7 @@ const DashboardView: React.FC<{ onNavigate: (view: any) => void }> = ({ onNaviga
            </h3>
            <div className="flex-1 overflow-y-auto pr-2 space-y-4">
               {recentActivity.length === 0 ? (
-                <p className="text-sm text-slate-400 italic text-center py-4">No recent transactions.</p>
+                <p className="text-sm text-slate-400 italic text-center py-4">No recent transactions for this location.</p>
               ) : (
                 recentActivity.map(t => (
                   <div key={t.id} className="flex gap-3 items-start pb-3 border-b border-slate-50 last:border-0">
@@ -201,10 +242,10 @@ const DashboardView: React.FC<{ onNavigate: (view: any) => void }> = ({ onNaviga
               )}
            </div>
            <button 
-             onClick={() => onNavigate('reports')} // Or a dedicated transactions view
+             onClick={() => onNavigate('activity')}
              className="mt-4 w-full py-2 text-sm text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg font-medium transition-colors"
            >
-             View All Transactions
+             View Full Log
            </button>
         </div>
       </div>
@@ -215,7 +256,7 @@ const DashboardView: React.FC<{ onNavigate: (view: any) => void }> = ({ onNaviga
             <div className="px-6 py-4 border-b border-red-100 bg-red-50/50 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <AlertTriangle className="text-red-600" size={20} />
-                <h3 className="font-semibold text-slate-800">Critical Stock Alerts</h3>
+                <h3 className="font-semibold text-slate-800">Critical Stock Alerts ({selectedLocationId === 'all' ? 'Global' : locations.find(l => l.id === selectedLocationId)?.name})</h3>
               </div>
               <button onClick={() => onNavigate('inventory')} className="text-xs font-medium text-red-600 hover:text-red-700 flex items-center gap-1">
                 View All <ArrowRight size={12} />
@@ -229,29 +270,35 @@ const DashboardView: React.FC<{ onNavigate: (view: any) => void }> = ({ onNaviga
                   <p>All stock levels are healthy.</p>
                 </div>
               ) : (
-                lowStockItems.map(item => (
-                  <div key={item.id} className="px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
-                    <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 bg-red-100 text-red-600 rounded-lg flex items-center justify-center font-bold text-sm">
-                          !
-                        </div>
-                        <div>
-                          <p className="font-medium text-slate-900">{item.name}</p>
-                          <p className="text-xs text-slate-500 font-mono">SKU: {item.sku}</p>
-                        </div>
+                lowStockItems.map(item => {
+                  const currentStock = selectedLocationId === 'all' 
+                    ? item.stockQuantity 
+                    : (item.stockDistribution[selectedLocationId] || 0);
+                    
+                  return (
+                    <div key={item.id} className="px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                      <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 bg-red-100 text-red-600 rounded-lg flex items-center justify-center font-bold text-sm">
+                            !
+                          </div>
+                          <div>
+                            <p className="font-medium text-slate-900">{item.name}</p>
+                            <p className="text-xs text-slate-500 font-mono">SKU: {item.sku}</p>
+                          </div>
+                      </div>
+                      <div className="flex items-center gap-6">
+                          <div className="text-right">
+                            <p className="text-xs text-slate-500 uppercase">Current Stock</p>
+                            <p className="font-bold text-red-600">{currentStock}</p>
+                          </div>
+                          <div className="text-right hidden sm:block">
+                            <p className="text-xs text-slate-500 uppercase">Reorder Level</p>
+                            <p className="font-medium text-slate-700">{item.lowStockThreshold}</p>
+                          </div>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-6">
-                        <div className="text-right">
-                          <p className="text-xs text-slate-500 uppercase">Current Stock</p>
-                          <p className="font-bold text-red-600">{item.stockQuantity}</p>
-                        </div>
-                        <div className="text-right hidden sm:block">
-                          <p className="text-xs text-slate-500 uppercase">Reorder Level</p>
-                          <p className="font-medium text-slate-700">{item.lowStockThreshold}</p>
-                        </div>
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
          </div>

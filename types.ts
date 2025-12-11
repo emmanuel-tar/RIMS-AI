@@ -1,5 +1,4 @@
 
-
 export enum Category {
   Electronics = 'Electronics',
   Clothing = 'Clothing',
@@ -28,6 +27,33 @@ export interface HardwareSettings {
   autoPrintReceipt: boolean;
   labelSize: 'standard' | 'small'; // 2x1 inch vs smaller
   showCashDrawerButton: boolean;
+  // New Printer Settings
+  selectedPrinterId?: string;
+  useA4Printer?: boolean;
+  receiptCopies?: number;
+  autoPrintKitchen?: boolean;
+}
+
+export interface ReceiptTemplate {
+  showLogo: boolean;
+  logoUrl?: string;
+  headerText?: string; // e.g. "Welcome to ShopPlace"
+  footerText: string; // e.g. "Thank you for shopping!"
+  showCashier: boolean;
+  showTaxBreakdown: boolean;
+  barcodeAtBottom: boolean; // Show transaction ID as barcode
+  // New Content Toggles
+  includeAddress?: boolean;
+  includePhone?: boolean;
+  includeName?: boolean;
+}
+
+export interface LabelTemplate {
+  size: '30-up-sheet' | '2x1-roll' | '1x1-roll'; // Avery 5160 vs Thermal
+  showPrice: boolean;
+  showSKU: boolean;
+  showName: boolean;
+  showBarcode: boolean;
 }
 
 export type SyncStatus = 'CONNECTED' | 'DISCONNECTED' | 'SYNCING' | 'ERROR';
@@ -37,6 +63,7 @@ export type FeatureModule = 'CRM' | 'TEAM' | 'SUPPLIERS' | 'MULTI_LOCATION' | 'C
 export interface StoreSettings {
   storeName: string;
   currencySymbol: string;
+  currencyCode: string;
   taxRate: number; // e.g. 0.08 for 8%
   supportEmail: string;
   loyaltyEnabled?: boolean;
@@ -44,6 +71,8 @@ export interface StoreSettings {
   loyaltyRedeemRate?: number; // Value of 1 point
   cloud?: CloudSettings;
   hardware: HardwareSettings;
+  receiptTemplate: ReceiptTemplate;
+  labelTemplate: LabelTemplate;
   features: Record<FeatureModule, boolean>;
 }
 
@@ -78,7 +107,7 @@ export type PaymentMethod = 'CASH' | 'CARD';
 
 export interface Transaction {
   id: string;
-  type: 'SALE' | 'RESTOCK' | 'ADJUSTMENT' | 'TRANSFER' | 'AUDIT';
+  type: 'SALE' | 'RESTOCK' | 'ADJUSTMENT' | 'TRANSFER' | 'AUDIT' | 'REFUND';
   itemId: string;
   quantity: number;
   reason?: string;
@@ -199,4 +228,26 @@ export interface CashShift {
   cashSales: number;
   cardSales: number; // For reporting, though not affecting cash drawer
   notes?: string;
+}
+
+export interface Toast {
+  id: string;
+  message: string;
+  type: 'SUCCESS' | 'ERROR' | 'INFO' | 'WARNING';
+}
+
+// PWA Install Prompt Event Interface
+export interface BeforeInstallPromptEvent extends Event {
+  readonly platforms: string[];
+  readonly userChoice: Promise<{
+    outcome: 'accepted' | 'dismissed';
+    platform: string;
+  }>;
+  prompt(): Promise<void>;
+}
+
+declare global {
+  interface WindowEventMap {
+    beforeinstallprompt: BeforeInstallPromptEvent;
+  }
 }

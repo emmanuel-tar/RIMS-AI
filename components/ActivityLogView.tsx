@@ -1,14 +1,16 @@
 
 import React, { useState, useMemo } from 'react';
-import { Search, Download, Filter, ArrowUpRight, ArrowDownLeft, RefreshCw, History, CheckCircle, AlertCircle } from 'lucide-react';
+import { Search, Download, Filter, ArrowUpRight, ArrowDownLeft, RefreshCw, History, CheckCircle, AlertCircle, RotateCcw } from 'lucide-react';
 import { useInventory } from '../context/ShopContext';
 import { Transaction } from '../types';
+import RefundModal from './RefundModal';
 
 const ActivityLogView: React.FC = () => {
   const { transactions, inventory, locations, employees } = useInventory();
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<string>('ALL');
   const [filterUser, setFilterUser] = useState<string>('ALL');
+  const [refundTxId, setRefundTxId] = useState<string | null>(null);
 
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
@@ -66,6 +68,7 @@ const ActivityLogView: React.FC = () => {
       case 'ADJUSTMENT': return 'bg-amber-100 text-amber-700';
       case 'TRANSFER': return 'bg-purple-100 text-purple-700';
       case 'AUDIT': return 'bg-slate-100 text-slate-700';
+      case 'REFUND': return 'bg-red-100 text-red-700';
       default: return 'bg-gray-100 text-gray-700';
     }
   };
@@ -119,6 +122,7 @@ const ActivityLogView: React.FC = () => {
               <option value="ADJUSTMENT">Adjustments</option>
               <option value="TRANSFER">Transfers</option>
               <option value="AUDIT">Audits</option>
+              <option value="REFUND">Refunds</option>
             </select>
           </div>
 
@@ -150,6 +154,7 @@ const ActivityLogView: React.FC = () => {
                 <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Location</th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">User</th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Reason</th>
+                <th className="px-6 py-4 w-10"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 bg-white">
@@ -176,7 +181,8 @@ const ActivityLogView: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 text-center whitespace-nowrap">
                       <div className={`flex items-center justify-center gap-1 font-bold text-sm ${
-                        ['SALE', 'TRANSFER'].includes(tx.type) ? 'text-red-600' : 'text-green-600'
+                        ['SALE', 'TRANSFER'].includes(tx.type) ? 'text-red-600' : 
+                        ['REFUND', 'RESTOCK'].includes(tx.type) ? 'text-green-600' : 'text-slate-600'
                       }`}>
                          {['SALE', 'TRANSFER'].includes(tx.type) ? <ArrowDownLeft size={14} /> : <ArrowUpRight size={14} />}
                          {tx.quantity}
@@ -199,12 +205,23 @@ const ActivityLogView: React.FC = () => {
                     <td className="px-6 py-4 text-sm text-slate-500 max-w-xs truncate">
                       {tx.reason || '-'}
                     </td>
+                    <td className="px-6 py-4 text-right">
+                       {tx.type === 'SALE' && (
+                         <button 
+                           onClick={() => setRefundTxId(tx.id)}
+                           className="p-1 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded"
+                           title="Issue Refund"
+                         >
+                            <RotateCcw size={16} />
+                         </button>
+                       )}
+                    </td>
                   </tr>
                 );
               })}
               {filteredTransactions.length === 0 && (
                 <tr>
-                   <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
+                   <td colSpan={8} className="px-6 py-12 text-center text-slate-500">
                       <div className="flex flex-col items-center justify-center">
                         <AlertCircle size={32} className="mb-2 opacity-20" />
                         <p>No records found matching your filters.</p>
@@ -216,6 +233,12 @@ const ActivityLogView: React.FC = () => {
           </table>
         </div>
       </div>
+
+      <RefundModal 
+        isOpen={!!refundTxId}
+        onClose={() => setRefundTxId(null)}
+        prefillTxId={refundTxId || undefined}
+      />
     </div>
   );
 };

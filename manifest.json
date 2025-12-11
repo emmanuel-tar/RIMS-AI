@@ -1,0 +1,21 @@
+{
+  "short_name": "RIMS AI",
+  "name": "RIMS Retail Inventory Management System",
+  "icons": [
+    {
+      "src": "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/google-keep.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/google-keep.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#0f172a",
+  "background_color": "#f8fafc",
+  "orientation": "any"
+}

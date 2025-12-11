@@ -1,7 +1,7 @@
 
 import React, { createContext, useContext, useState, ReactNode, useMemo, useEffect } from 'react';
-import { InventoryItem, Transaction, DashboardStats, Location, Supplier, PurchaseOrder, StoreSettings, Employee, Customer, CloudSettings, SyncStatus, FeatureModule, Expense, InventoryBatch, Product, HeldOrder, CashShift, PaymentMethod } from '../types';
-import { MOCK_INVENTORY, MOCK_LOCATIONS, MOCK_SUPPLIERS, MOCK_EMPLOYEES, MOCK_CUSTOMERS, MOCK_EXPENSES } from '../constants';
+import { InventoryItem, Transaction, DashboardStats, Location, Supplier, PurchaseOrder, StoreSettings, Employee, Customer, CloudSettings, SyncStatus, FeatureModule, Expense, InventoryBatch, Product, HeldOrder, CashShift, PaymentMethod, BeforeInstallPromptEvent, Toast } from '../types';
+import { MOCK_INVENTORY, MOCK_LOCATIONS, MOCK_SUPPLIERS, MOCK_EMPLOYEES, MOCK_CUSTOMERS, MOCK_EXPENSES, SUPPORTED_CURRENCIES } from '../constants';
 
 // Dynamic Server URL: Checks LocalStorage first (set via Settings), else defaults to localhost
 const getBaseUrl = () => {
@@ -41,10 +41,12 @@ interface InventoryContextType {
   updateItem: (id: string, updates: Partial<InventoryItem>) => void;
   deleteItem: (id: string) => void;
   adjustStock: (id: string, locationId: string, quantityChange: number, reason: string) => void;
+  bulkAdjustStock: (adjustments: { id: string, quantityChange: number }[], locationId: string, reason: string) => void;
   transferStock: (itemId: string, fromLocationId: string, toLocationId: string, quantity: number) => void;
   commitAudit: (locationId: string, adjustments: { itemId: string, systemQty: number, countedQty: number }[]) => void;
   processSale: (locationId: string, items: { itemId: string, quantity: number }[], customerId?: string, discount?: number, pointsRedeemed?: number, note?: string, paymentMethod?: PaymentMethod) => Transaction;
-  
+  processRefund: (originalTxId: string, locationId: string, items: { itemId: string, quantity: number }[], restock: boolean, paymentMethod?: PaymentMethod) => void;
+
   // Suppliers & POs
   addSupplier: (supplier: Omit<Supplier, 'id'>) => void;
   updateSupplier: (id: string, updates: Partial<Supplier>) => void;
@@ -76,10 +78,20 @@ interface InventoryContextType {
   exportData: () => void;
   getPriceForLocation: (item: InventoryItem, locationId: string) => number;
   generateSku: (category: string) => string;
+  formatCurrency: (amount: number) => string;
   
   // Network Config
   serverUrl: string;
   setServerUrl: (url: string) => void;
+
+  // PWA
+  deferredPrompt: BeforeInstallPromptEvent | null;
+  installApp: () => void;
+
+  // Toasts
+  toasts: Toast[];
+  addToast: (message: string, type?: Toast['type']) => void;
+  removeToast: (id: string) => void;
 }
 
 const InventoryContext = createContext<InventoryContextType | undefined>(undefined);
@@ -107,14 +119,18 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   const [searchQuery, setSearchQuery] = useState('');
   const [isLocalServerConnected, setIsLocalServerConnected] = useState(false);
 
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+
   const [settings, setSettings] = useState<StoreSettings>({
     storeName: 'RIMS Retail',
-    currencySymbol: '$',
-    taxRate: 0.08,
+    currencySymbol: '₦',
+    currencyCode: 'NGN',
+    taxRate: 0.075,
     supportEmail: 'admin@rims.local',
     loyaltyEnabled: true,
-    loyaltyEarnRate: 1,
-    loyaltyRedeemRate: 0.01,
+    loyaltyEarnRate: 100, // Spend 100 NGN to earn 1 point
+    loyaltyRedeemRate: 1, // 1 point = 1 NGN
     cloud: {
       enabled: false,
       apiEndpoint: 'https://api.rims-cloud.com/v1',
@@ -125,7 +141,30 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       receiptPrinterWidth: '80mm',
       autoPrintReceipt: true,
       labelSize: 'standard',
-      showCashDrawerButton: true
+      showCashDrawerButton: true,
+      selectedPrinterId: 'p5',
+      useA4Printer: false,
+      receiptCopies: 1,
+      autoPrintKitchen: false
+    },
+    receiptTemplate: {
+      showLogo: false,
+      logoUrl: '',
+      headerText: 'Welcome to RIMS Retail',
+      footerText: 'Thank you for shopping with us!\nNo returns without receipt.',
+      showCashier: true,
+      showTaxBreakdown: true,
+      barcodeAtBottom: true,
+      includeAddress: true,
+      includePhone: true,
+      includeName: true
+    },
+    labelTemplate: {
+      size: '2x1-roll',
+      showPrice: true,
+      showName: true,
+      showSKU: true,
+      showBarcode: true
     },
     features: {
       CRM: true,
@@ -173,6 +212,12 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   // --- INITIALIZATION ---
   useEffect(() => {
+    // PWA Install Event Listener
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    });
+
     const initializeData = async () => {
       // 1. Check for Local Node Server
       try {
@@ -282,11 +327,43 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   // --- ACTION HANDLERS ---
 
+  const addToast = (message: string, type: Toast['type'] = 'INFO') => {
+    const id = Date.now().toString();
+    setToasts(prev => [...prev, { id, message, type }]);
+    // Auto remove after 4 seconds
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 4000);
+  };
+
+  const removeToast = (id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  };
+
+  const formatCurrency = (amount: number) => {
+    return `${settings.currencySymbol}${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
+  const installApp = () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then((choiceResult) => {
+        if (choiceResult.outcome === 'accepted') {
+          console.log('User accepted the install prompt');
+        } else {
+          console.log('User dismissed the install prompt');
+        }
+        setDeferredPrompt(null);
+      });
+    }
+  };
+
   const login = (email: string): boolean => {
     const user = employees.find(e => e.email.toLowerCase() === email.toLowerCase() && e.status === 'ACTIVE');
     if (user) {
       setCurrentUser(user);
       localStorage.setItem('rims_user', JSON.stringify(user));
+      addToast(`Welcome back, ${user.name}`, 'SUCCESS');
       return true;
     }
     return false;
@@ -295,6 +372,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   const logout = () => {
     setCurrentUser(null);
     localStorage.removeItem('rims_user');
+    addToast('Signed out successfully', 'INFO');
   };
 
   const getPriceForLocation = (item: InventoryItem, locationId: string): number => {
@@ -320,10 +398,16 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     return `${prefix}-${(maxNum + 1).toString().padStart(3, '0')}`;
   };
 
-  const updateSettings = (updates: Partial<StoreSettings>) => setSettings(prev => ({ ...prev, ...updates }));
+  const updateSettings = (updates: Partial<StoreSettings>) => {
+    setSettings(prev => ({ ...prev, ...updates }));
+    addToast('Settings updated', 'SUCCESS');
+  };
+  
   const toggleFeature = (feature: FeatureModule, isEnabled: boolean) => {
     setSettings(prev => ({ ...prev, features: { ...prev.features, [feature]: isEnabled } }));
+    addToast(`${feature} module ${isEnabled ? 'enabled' : 'disabled'}`, 'INFO');
   };
+  
   const updateCloudSettings = (updates: Partial<CloudSettings>) => {
      setSettings(prev => ({ ...prev, cloud: { ...(prev.cloud || { enabled: false, apiEndpoint: '', storeId: '', apiKey: '' }), ...updates } }));
   };
@@ -337,15 +421,18 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
             window.location.reload();
         } else {
             setSyncStatus('ERROR');
+            addToast('Connection failed', 'ERROR');
         }
     } catch(e) {
         setSyncStatus('ERROR');
+        addToast('Connection failed', 'ERROR');
     }
   };
 
   const addLocation = (locationData: Omit<Location, 'id'>) => {
     const newLocation: Location = { ...locationData, id: `loc-${Date.now()}` };
     setLocations(prev => [...prev, newLocation]);
+    addToast(`Location "${locationData.name}" added`, 'SUCCESS');
   };
 
   // INVENTORY ACTIONS
@@ -375,6 +462,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     };
     setTransactions(prev => [transaction, ...prev]);
     if (isLocalServerConnected) postToServer('transactions', transaction);
+    addToast(`${newItem.name} added to inventory`, 'SUCCESS');
   };
 
   const updateItem = (id: string, updates: Partial<InventoryItem>) => {
@@ -387,6 +475,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       }
       return item;
     }));
+    addToast('Item updated', 'SUCCESS');
   };
 
   const deleteItem = (id: string) => {
@@ -394,6 +483,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     if (isLocalServerConnected) {
        fetch(`${serverUrl}/inventory/${id}`, { method: 'DELETE' });
     }
+    addToast('Item deleted', 'INFO');
   };
 
   const adjustStock = (id: string, locationId: string, quantityChange: number, reason: string, batchInfo?: { batchNumber: string, expiryDate: string }) => {
@@ -456,13 +546,74 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     };
     setTransactions(prev => [transaction, ...prev]);
     if (isLocalServerConnected) postToServer('transactions', transaction);
+    
+    if (Math.abs(quantityChange) > 0) {
+        addToast(`Stock ${quantityChange > 0 ? 'added' : 'deducted'} successfully`, 'SUCCESS');
+    }
+  };
+
+  const bulkAdjustStock = (adjustments: { id: string, quantityChange: number }[], locationId: string, reason: string) => {
+    const timestamp = new Date().toISOString();
+    const inventoryUpdates: InventoryItem[] = [];
+    const newTransactions: Transaction[] = [];
+    
+    // Batch Update Local State
+    setInventory(prev => prev.map(item => {
+        const adj = adjustments.find(a => a.id === item.id);
+        if (adj && adj.quantityChange !== 0) {
+            const currentLocStock = item.stockDistribution[locationId] || 0;
+            const newLocStock = Math.max(0, currentLocStock + adj.quantityChange);
+            const newDistribution = { ...item.stockDistribution, [locationId]: newLocStock };
+            const newTotal = Object.values(newDistribution).reduce((a: number, b: number) => a + b, 0);
+            
+            const updatedItem = {
+                ...item,
+                stockDistribution: newDistribution,
+                stockQuantity: newTotal,
+                lastUpdated: timestamp
+            };
+            
+            inventoryUpdates.push(updatedItem);
+
+            // Create Transaction Record
+            newTransactions.push({
+                id: `TX-${Date.now()}-${Math.random().toString(36).substr(2,5)}`,
+                type: adj.quantityChange > 0 ? 'RESTOCK' : (reason.includes('Audit') ? 'AUDIT' : 'ADJUSTMENT'),
+                itemId: item.id,
+                quantity: Math.abs(adj.quantityChange),
+                reason: reason,
+                timestamp,
+                userName: currentUser?.name || 'Admin',
+                locationId
+            });
+
+            return updatedItem;
+        }
+        return item;
+    }));
+
+    setTransactions(prev => [...newTransactions, ...prev]);
+
+    // Batch Update Server
+    if (isLocalServerConnected) {
+        fetch(`${serverUrl}/sales`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              transactions: newTransactions,
+              inventoryUpdates,
+              customerUpdate: null
+            })
+        });
+    }
+    addToast(`${adjustments.length} items adjusted`, 'SUCCESS');
   };
 
   const transferStock = (itemId: string, fromLocationId: string, toLocationId: string, quantity: number) => {
     // Logic similar to adjustStock but updates two locations. 
-    // For brevity, we update state optimistically. In a full implementation, we'd sync this update.
     adjustStock(itemId, fromLocationId, -quantity, `Transfer Out to ${toLocationId}`);
     adjustStock(itemId, toLocationId, quantity, `Transfer In from ${fromLocationId}`);
+    addToast('Stock transfer complete', 'SUCCESS');
   };
 
   const commitAudit = (locationId: string, adjustments: { itemId: string, systemQty: number, countedQty: number }[]) => {
@@ -472,6 +623,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
            adjustStock(adj.itemId, locationId, diff, 'Audit Correction');
        }
     });
+    addToast('Audit results committed', 'SUCCESS');
   };
 
   const processSale = (
@@ -480,7 +632,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     customerId?: string, 
     discountPercent?: number, 
     pointsRedeemed?: number, 
-    note?: string,
+    note?: string, 
     paymentMethod: PaymentMethod = 'CASH'
   ): Transaction => {
     const timestamp = new Date().toISOString();
@@ -502,6 +654,12 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
 
         const currentLocStock = item.stockDistribution[locationId] || 0;
         const newLocStock = Math.max(0, currentLocStock - saleItem.quantity);
+        
+        // Low Stock Alert Check
+        if (newLocStock <= item.lowStockThreshold && currentLocStock > item.lowStockThreshold) {
+            // Trigger toast alert for low stock
+            addToast(`Low Stock Alert: ${item.name} is down to ${newLocStock} units at this location.`, 'WARNING');
+        }
         
         const newDistribution = { ...item.stockDistribution, [locationId]: newLocStock };
         const newTotal = Object.values(newDistribution).reduce((a: number, b: number) => a + b, 0);
@@ -598,8 +756,118 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         })
       });
     }
+    
+    addToast('Sale processed successfully', 'SUCCESS');
 
     return { id: masterTxId, type: 'SALE', itemId: 'MULTI', quantity: items.length, timestamp, userName: currentUser?.name || 'Staff', locationId, paymentMethod };
+  };
+
+  const processRefund = (
+    originalTxId: string, 
+    locationId: string, 
+    items: { itemId: string, quantity: number }[], 
+    restock: boolean, 
+    paymentMethod: PaymentMethod = 'CASH'
+  ) => {
+    const timestamp = new Date().toISOString();
+    const transactionsToLog: Transaction[] = [];
+    const inventoryUpdates: InventoryItem[] = [];
+    const refundReason = `Refund for TX: ${originalTxId}`;
+    
+    // 1. Process Items
+    items.forEach(refundItem => {
+        // Log Refund Transaction
+        transactionsToLog.push({
+            id: `REF-${Date.now()}`,
+            type: 'REFUND',
+            itemId: refundItem.itemId,
+            quantity: refundItem.quantity,
+            reason: refundReason,
+            timestamp,
+            userName: currentUser?.name || 'Staff',
+            locationId,
+            paymentMethod
+        });
+
+        // Restock Inventory if needed
+        if (restock) {
+            setInventory(prev => prev.map(invItem => {
+                if (invItem.id === refundItem.itemId) {
+                    const currentLocStock = invItem.stockDistribution[locationId] || 0;
+                    const newLocStock = currentLocStock + refundItem.quantity;
+                    const newDistribution = { ...invItem.stockDistribution, [locationId]: newLocStock };
+                    const newTotal = Object.values(newDistribution).reduce((a: number, b: number) => a + b, 0);
+                    
+                    const updated = {
+                        ...invItem,
+                        stockDistribution: newDistribution,
+                        stockQuantity: newTotal,
+                        lastUpdated: timestamp
+                    };
+                    inventoryUpdates.push(updated);
+                    return updated;
+                }
+                return invItem;
+            }));
+        }
+    });
+
+    setTransactions(prev => [...transactionsToLog, ...prev]);
+
+    // 2. Calculate Refund Value (Approximate based on current price for MVP)
+    const refundValue = items.reduce((sum, item) => {
+        const inv = inventory.find(i => i.id === item.itemId);
+        return sum + (item.quantity * (inv ? getPriceForLocation(inv, locationId) : 0));
+    }, 0);
+
+    // 3. Update Shift (Net Sales adjustment)
+    if (currentShift && currentShift.locationId === locationId && currentShift.status === 'OPEN') {
+        const updatedShift = {
+           ...currentShift,
+           cashSales: paymentMethod === 'CASH' ? currentShift.cashSales - refundValue : currentShift.cashSales,
+           cardSales: paymentMethod === 'CARD' ? currentShift.cardSales - refundValue : currentShift.cardSales
+        };
+        setCurrentShift(updatedShift);
+        setCashShifts(prev => prev.map(s => s.id === updatedShift.id ? updatedShift : s));
+        if (isLocalServerConnected) postToServer('cash_shifts', updatedShift);
+    }
+    
+    // 4. Reverse Loyalty if original TX had customer (Complex, need lookup. For MVP skip or implement simpler logic)
+    // Finding original transaction to get customer ID
+    const originalTx = transactions.find(t => t.id === originalTxId);
+    let customerUpdate: Customer | null = null;
+    
+    if (originalTx?.customerId) {
+        const pointsToReverse = Math.floor(refundValue / (settings.loyaltyEarnRate || 1));
+        setCustomers(prev => prev.map(c => {
+            if (c.id === originalTx.customerId) {
+                const updated = {
+                    ...c,
+                    totalSpent: Math.max(0, c.totalSpent - refundValue),
+                    loyaltyPoints: Math.max(0, c.loyaltyPoints - pointsToReverse)
+                };
+                customerUpdate = updated;
+                return updated;
+            }
+            return c;
+        }));
+    }
+
+    // 5. Sync to Server
+    if (isLocalServerConnected) {
+        // Re-use sales endpoint for batch update or create a new one. 
+        // Using sales endpoint structure works as it handles transactions and inventory updates generally.
+        fetch(`${serverUrl}/sales`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              transactions: transactionsToLog,
+              inventoryUpdates,
+              customerUpdate
+            })
+        });
+    }
+    addToast('Refund processed successfully', 'INFO');
   };
 
   // --- HELD ORDERS ---
@@ -610,6 +878,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       timestamp: new Date().toISOString()
     };
     setHeldOrders(prev => [newHold, ...prev]);
+    addToast('Order held successfully', 'INFO');
   };
 
   const deleteHeldOrder = (id: string) => {
@@ -631,6 +900,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     setCurrentShift(newShift);
     setCashShifts(prev => [newShift, ...prev]);
     if(isLocalServerConnected) postToServer('cash_shifts', newShift);
+    addToast('Shift opened', 'SUCCESS');
   };
   
   const closeShift = (endAmount: number, notes?: string) => {
@@ -652,6 +922,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     setCashShifts(prev => prev.map(s => s.id === currentShift.id ? closedShift : s));
     setCurrentShift(null);
     if(isLocalServerConnected) postToServer('cash_shifts', closedShift);
+    addToast('Shift closed', 'INFO');
   };
 
   // --- ENTITY CRUD (Generic) ---
@@ -659,53 +930,68 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     const ns = { ...s, id: Date.now().toString() };
     setSuppliers(prev => [...prev, ns]);
     if (isLocalServerConnected) postToServer('suppliers', ns);
+    addToast('Supplier added', 'SUCCESS');
   };
   const updateSupplier = (id: string, u: Partial<Supplier>) => {
     setSuppliers(prev => prev.map(s => s.id === id ? { ...s, ...u } : s));
     if (isLocalServerConnected) postToServer('suppliers', { id, ...u });
+    addToast('Supplier updated', 'SUCCESS');
   };
 
   const addEmployee = (e: Omit<Employee, 'id'>) => {
     const ne = { ...e, id: `emp-${Date.now()}` };
     setEmployees(prev => [...prev, ne]);
     if (isLocalServerConnected) postToServer('employees', ne);
+    addToast('Employee added', 'SUCCESS');
   };
   const updateEmployee = (id: string, u: Partial<Employee>) => {
     setEmployees(prev => prev.map(e => e.id === id ? { ...e, ...u } : e));
     if (isLocalServerConnected) postToServer('employees', { id, ...u });
+    addToast('Employee updated', 'SUCCESS');
   };
 
   const addCustomer = (c: Omit<Customer, 'id' | 'loyaltyPoints' | 'totalSpent'>) => {
     const nc = { ...c, id: `cust-${Date.now()}`, loyaltyPoints: 0, totalSpent: 0 };
     setCustomers(prev => [...prev, nc]);
     if (isLocalServerConnected) postToServer('customers', nc);
+    addToast('Customer added', 'SUCCESS');
   };
   const updateCustomer = (id: string, u: Partial<Customer>) => {
     setCustomers(prev => prev.map(c => c.id === id ? { ...c, ...u } : c));
     if (isLocalServerConnected) postToServer('customers', { id, ...u });
+    addToast('Customer updated', 'SUCCESS');
   };
 
   const addExpense = (e: Omit<Expense, 'id'>) => {
     const ne = { ...e, id: `exp-${Date.now()}` };
     setExpenses(prev => [...prev, ne]);
     if (isLocalServerConnected) postToServer('expenses', ne);
+    addToast('Expense recorded', 'SUCCESS');
   };
   const deleteExpense = (id: string) => {
     setExpenses(prev => prev.filter(e => e.id !== id));
     if (isLocalServerConnected) fetch(`${serverUrl}/expenses/${id}`, { method: 'DELETE' });
+    addToast('Expense deleted', 'INFO');
   };
 
-  const createPurchaseOrder = (poData: any) => {
-    const newPO = { ...poData, id: `PO-${Date.now()}`, status: 'ORDERED', dateCreated: new Date().toISOString(), totalCost: 0 }; 
+  const createPurchaseOrder = (poData: Omit<PurchaseOrder, 'id' | 'status' | 'dateCreated' | 'totalCost'>) => {
+    const newPO: PurchaseOrder = { 
+        ...poData, 
+        id: `PO-${Date.now()}`, 
+        status: 'ORDERED', 
+        dateCreated: new Date().toISOString(), 
+        totalCost: 0 
+    }; 
     // totalCost calculation logic should be here or handled in component
     let calculatedCost = 0;
     if(poData.items) {
-        calculatedCost = poData.items.reduce((sum: number, i: any) => sum + (i.quantity * i.costPrice), 0);
+        calculatedCost = poData.items.reduce((sum: number, i) => sum + (i.quantity * i.costPrice), 0);
     }
     newPO.totalCost = calculatedCost;
     
     setPurchaseOrders(prev => [newPO, ...prev]);
     if (isLocalServerConnected) postToServer('purchase_orders', newPO);
+    addToast('Purchase order created', 'SUCCESS');
   };
   
   const receivePurchaseOrder = (id: string, locationId: string, invoiceNumber: string, batchDetails?: any) => {
@@ -727,6 +1013,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
           const updatedPO = { ...po, status: 'RECEIVED' as const, invoiceNumber };
           setPurchaseOrders(prev => prev.map(p => p.id === id ? updatedPO : p));
           if (isLocalServerConnected) postToServer('purchase_orders', updatedPO);
+          addToast('Stock received from PO', 'SUCCESS');
       }
   };
 
@@ -752,6 +1039,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    addToast('Export started', 'INFO');
   };
 
   return (
@@ -759,11 +1047,13 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       inventory, locations, transactions, suppliers, purchaseOrders, employees, customers, expenses, stats, settings, currentUser, syncStatus,
       isLocalServerConnected, heldOrders,
       triggerSync, updateCloudSettings, login, logout, updateSettings, toggleFeature, addLocation, addItem, updateItem, deleteItem,
-      adjustStock, transferStock, commitAudit, processSale, addSupplier, updateSupplier, createPurchaseOrder, receivePurchaseOrder,
+      adjustStock, bulkAdjustStock, transferStock, commitAudit, processSale, processRefund, addSupplier, updateSupplier, createPurchaseOrder, receivePurchaseOrder,
       updatePurchaseOrderStatus, addEmployee, updateEmployee, addCustomer, updateCustomer, addExpense, deleteExpense,
       holdOrder, deleteHeldOrder,
-      searchQuery, setSearchQuery, exportData, getPriceForLocation, generateSku, serverUrl, setServerUrl,
-      currentShift, openShift, closeShift
+      searchQuery, setSearchQuery, exportData, getPriceForLocation, generateSku, formatCurrency, serverUrl, setServerUrl,
+      currentShift, openShift, closeShift,
+      deferredPrompt, installApp,
+      toasts, addToast, removeToast
     }}>
       {children}
     </InventoryContext.Provider>

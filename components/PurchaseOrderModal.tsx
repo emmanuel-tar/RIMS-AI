@@ -9,7 +9,7 @@ interface PurchaseOrderModalProps {
 }
 
 const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({ isOpen, onClose }) => {
-  const { suppliers, inventory, createPurchaseOrder } = useInventory();
+  const { suppliers, inventory, createPurchaseOrder, formatCurrency } = useInventory();
   
   const [supplierId, setSupplierId] = useState('');
   const [notes, setNotes] = useState('');
@@ -144,8 +144,8 @@ const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({ isOpen, onClose
                      <tr key={idx}>
                        <td className="px-4 py-2 text-sm">{product?.name || item.itemId}</td>
                        <td className="px-4 py-2 text-sm text-right">{item.quantity}</td>
-                       <td className="px-4 py-2 text-sm text-right">${item.costPrice.toFixed(2)}</td>
-                       <td className="px-4 py-2 text-sm text-right font-medium">${(item.quantity * item.costPrice).toFixed(2)}</td>
+                       <td className="px-4 py-2 text-sm text-right">{formatCurrency(item.costPrice)}</td>
+                       <td className="px-4 py-2 text-sm text-right font-medium">{formatCurrency(item.quantity * item.costPrice)}</td>
                        <td className="px-4 py-2 text-center">
                          <button onClick={() => handleRemoveItem(idx)} className="text-red-500 hover:text-red-700">
                            <Trash2 size={16} />
@@ -163,7 +163,7 @@ const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({ isOpen, onClose
                <tfoot className="bg-slate-50">
                  <tr>
                    <td colSpan={3} className="px-4 py-3 text-right font-bold text-slate-700">Total Estimated Cost:</td>
-                   <td className="px-4 py-3 text-right font-bold text-slate-900">${totalCost.toFixed(2)}</td>
+                   <td className="px-4 py-3 text-right font-bold text-slate-900">{formatCurrency(totalCost)}</td>
                    <td></td>
                  </tr>
                </tfoot>

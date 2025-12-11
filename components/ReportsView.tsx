@@ -14,7 +14,7 @@ interface CategoryReport {
 }
 
 const ReportsView: React.FC = () => {
-  const { inventory, locations } = useInventory();
+  const { inventory, locations, formatCurrency } = useInventory();
   
   // Note: We currently show reports for ALL locations to give a high-level owner view.
   // In a future update, we could pass selectedLocationId here to filter.
@@ -86,7 +86,7 @@ const ReportsView: React.FC = () => {
            </div>
            <p className="text-sm font-medium text-slate-500 mb-1">Total Retail Value</p>
            <h3 className="text-3xl font-bold text-slate-900">
-             ${totals.retailValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+             {formatCurrency(totals.retailValue)}
            </h3>
            <p className="text-xs text-green-600 mt-2 flex items-center gap-1 font-medium">
              <TrendingUp size={14} /> Potential Revenue
@@ -99,7 +99,7 @@ const ReportsView: React.FC = () => {
            </div>
            <p className="text-sm font-medium text-slate-500 mb-1">Total Cost Value</p>
            <h3 className="text-3xl font-bold text-slate-900">
-             ${totals.costValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+             {formatCurrency(totals.costValue)}
            </h3>
            <p className="text-xs text-slate-500 mt-2 flex items-center gap-1">
              Asset Investment
@@ -112,7 +112,7 @@ const ReportsView: React.FC = () => {
            </div>
            <p className="text-sm font-medium text-slate-500 mb-1">Estimated Gross Margin</p>
            <h3 className="text-3xl font-bold text-indigo-600">
-             ${totals.margin.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+             {formatCurrency(totals.margin)}
            </h3>
            <p className="text-xs text-slate-500 mt-2 flex items-center gap-1">
              {totals.retailValue > 0 ? ((totals.margin / totals.retailValue) * 100).toFixed(1) : 0}% Margin Rate
@@ -158,10 +158,10 @@ const ReportsView: React.FC = () => {
                     {row.stockQuantity}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm text-slate-600">
-                    ${row.costValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    {formatCurrency(row.costValue)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-semibold text-slate-900">
-                    ${row.retailValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    {formatCurrency(row.retailValue)}
                   </td>
                 </tr>
               ))}
@@ -172,8 +172,8 @@ const ReportsView: React.FC = () => {
                  <td></td>
                  <td className="px-6 py-4 text-right">{inventory.length}</td>
                  <td className="px-6 py-4 text-right">{totals.stockQuantity}</td>
-                 <td className="px-6 py-4 text-right">${totals.costValue.toLocaleString()}</td>
-                 <td className="px-6 py-4 text-right">${totals.retailValue.toLocaleString()}</td>
+                 <td className="px-6 py-4 text-right">{formatCurrency(totals.costValue)}</td>
+                 <td className="px-6 py-4 text-right">{formatCurrency(totals.retailValue)}</td>
                </tr>
             </tfoot>
           </table>

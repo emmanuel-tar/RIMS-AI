@@ -1,10 +1,12 @@
 
 import React, { useState, useMemo } from 'react';
-import { Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, Receipt, User, Tag, X, Zap, Check, PauseCircle, History, StickyNote, RotateCcw, Lock, Unlock, AlertTriangle } from 'lucide-react';
+import { Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, Receipt, User, Tag, X, Zap, Check, PauseCircle, History, StickyNote, RotateCcw, Lock, Unlock, AlertTriangle, Calculator as CalculatorIcon } from 'lucide-react';
 import { useInventory } from '../context/ShopContext';
 import { InventoryItem, Category, HeldOrder } from '../types';
 import ReceiptModal from './ReceiptModal';
 import CashShiftModal from './CashShiftModal';
+import RefundModal from './RefundModal';
+import Calculator from './Calculator';
 import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 import { printReceipt } from '../services/printService';
 
@@ -15,7 +17,7 @@ interface CartItem extends InventoryItem {
 const POSView: React.FC<{ locationId: string }> = ({ locationId }) => {
   const { 
     inventory, locations, processSale, customers, getPriceForLocation, 
-    settings, transactions, heldOrders, holdOrder, deleteHeldOrder, currentShift, currentUser
+    settings, transactions, heldOrders, holdOrder, deleteHeldOrder, currentShift, currentUser, formatCurrency
   } = useInventory();
   
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -33,12 +35,15 @@ const POSView: React.FC<{ locationId: string }> = ({ locationId }) => {
   const [isRecallModalOpen, setIsRecallModalOpen] = useState(false);
   const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
   const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
+  const [isRefundModalOpen, setIsRefundModalOpen] = useState(false);
+  const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
 
   const [lastTransaction, setLastTransaction] = useState<{
     id: string;
     items: { name: string; sku: string; qty: number; price: number }[];
     subtotal: number;
     discount: number;
+    tax: number;
     total: number;
     customer?: string;
   } | null>(null);
@@ -62,7 +67,6 @@ const POSView: React.FC<{ locationId: string }> = ({ locationId }) => {
     if (item) {
       addToCart(item);
     } else {
-      // Optional: Sound error beep here
       console.warn("Product not found:", barcode);
     }
   });
@@ -160,7 +164,6 @@ const POSView: React.FC<{ locationId: string }> = ({ locationId }) => {
     setSelectedCustomerId('');
     setDiscountPercent(0);
     setOrderNote('');
-    // Could add a toast notification here
   };
 
   const handleRecallOrder = (order: HeldOrder) => {
@@ -189,7 +192,10 @@ const POSView: React.FC<{ locationId: string }> = ({ locationId }) => {
   }, 0);
   
   const discountAmount = (subtotal * discountPercent) / 100;
-  const total = subtotal - discountAmount;
+  const taxableAmount = subtotal - discountAmount;
+  const taxAmount = taxableAmount * (settings.taxRate || 0);
+  const total = taxableAmount + taxAmount;
+  
   const loyaltyPointsEarned = Math.floor(total / (settings.loyaltyEarnRate || 1));
 
   const finalizeSale = (paymentMethod: 'CARD' | 'CASH') => {
@@ -206,6 +212,7 @@ const POSView: React.FC<{ locationId: string }> = ({ locationId }) => {
       })),
       subtotal,
       discount: discountAmount,
+      tax: taxAmount,
       total,
       customer: selectedCustomer?.name
     };
@@ -229,7 +236,7 @@ const POSView: React.FC<{ locationId: string }> = ({ locationId }) => {
     setDiscountPercent(0);
     setOrderNote('');
     
-    setLastTransaction({ ...receiptSnapshot, id: receiptSnapshot.transactionId, items: receiptSnapshot.items });
+    setLastTransaction(receiptSnapshot);
 
     // Auto-Print Check
     if (settings.hardware.autoPrintReceipt) {
@@ -275,7 +282,7 @@ const POSView: React.FC<{ locationId: string }> = ({ locationId }) => {
                         </div>
                       )}
                       <p className="font-semibold text-slate-800 text-sm truncate">{item.name}</p>
-                      <p className="text-indigo-600 font-bold text-xs mt-1">${price.toFixed(2)}</p>
+                      <p className="text-indigo-600 font-bold text-xs mt-1">{formatCurrency(price)}</p>
                     </button>
                   );
                 })}
@@ -344,7 +351,7 @@ const POSView: React.FC<{ locationId: string }> = ({ locationId }) => {
                    </h3>
                    <p className="text-xs text-slate-400 mb-3">{item.sku}</p>
                    <div className="mt-auto flex items-center justify-between">
-                      <span className="text-lg font-bold text-slate-900">${price.toFixed(2)}</span>
+                      <span className="text-lg font-bold text-slate-900">{formatCurrency(price)}</span>
                       <div className={`p-1.5 rounded-lg transition-all ${
                          isRecentlyAdded ? 'bg-green-500 text-white' : 'bg-indigo-50 text-indigo-600 opacity-0 group-hover:opacity-100'
                       }`}>
@@ -385,6 +392,21 @@ const POSView: React.FC<{ locationId: string }> = ({ locationId }) => {
            
            {/* Cart Action Toolbar */}
            <div className="flex gap-1 justify-end border-t border-slate-800 pt-3">
+                <button 
+                  onClick={() => setIsCalculatorOpen(!isCalculatorOpen)} // Toggle Calc
+                  className={`p-2 rounded-lg transition-colors ${isCalculatorOpen ? 'bg-indigo-600 text-white' : 'bg-slate-800 hover:bg-slate-700 text-slate-400'}`}
+                  title="Calculator"
+                >
+                  <CalculatorIcon size={16} />
+                </button>
+                <div className="w-px bg-slate-700 mx-1"></div>
+                <button 
+                  onClick={() => setIsRefundModalOpen(true)}
+                  className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-amber-400 transition-colors"
+                  title="Transaction Lookup / Refund"
+                >
+                  <RotateCcw size={16} />
+                </button>
                 <button 
                 onClick={() => setIsRecallModalOpen(true)}
                 className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-indigo-400 relative transition-colors"
@@ -461,7 +483,7 @@ const POSView: React.FC<{ locationId: string }> = ({ locationId }) => {
                        </div>
                     </div>
                     <div className="flex flex-col justify-between items-end">
-                       <p className="font-bold text-slate-900">${(price * item.cartQty).toFixed(2)}</p>
+                       <p className="font-bold text-slate-900">{formatCurrency(price * item.cartQty)}</p>
                        <button 
                          onClick={() => removeFromCart(item.id)}
                          className="text-slate-300 hover:text-red-500 p-1 transition-colors"
@@ -527,17 +549,23 @@ const POSView: React.FC<{ locationId: string }> = ({ locationId }) => {
            <div className="border-t border-slate-200 pt-2 space-y-1">
               <div className="flex justify-between text-sm text-slate-600">
                 <span>Subtotal</span>
-                <span>${subtotal.toFixed(2)}</span>
+                <span>{formatCurrency(subtotal)}</span>
               </div>
               {discountPercent > 0 && (
                 <div className="flex justify-between text-sm text-green-600">
                   <span>Discount ({discountPercent}%)</span>
-                  <span>-${discountAmount.toFixed(2)}</span>
+                  <span>-{formatCurrency(discountAmount)}</span>
                 </div>
               )}
-              <div className="flex justify-between text-lg font-bold text-slate-900 pt-1">
+              {taxAmount > 0 && (
+                <div className="flex justify-between text-sm text-slate-500">
+                  <span>Tax ({(settings.taxRate * 100).toFixed(1)}%)</span>
+                  <span>{formatCurrency(taxAmount)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-lg font-bold text-slate-900 pt-1 border-t border-slate-200/50 mt-1">
                 <span>Total</span>
-                <span>${total.toFixed(2)}</span>
+                <span>{formatCurrency(total)}</span>
               </div>
            </div>
            
@@ -672,12 +700,18 @@ const POSView: React.FC<{ locationId: string }> = ({ locationId }) => {
                    {discountPercent > 0 && (
                      <div className="flex justify-between text-sm text-green-600">
                         <span>Discount</span>
-                        <span>{discountPercent}% (-${discountAmount.toFixed(2)})</span>
+                        <span>{discountPercent}% (-{formatCurrency(discountAmount)})</span>
+                     </div>
+                   )}
+                   {taxAmount > 0 && (
+                     <div className="flex justify-between text-sm text-slate-500">
+                        <span>Tax ({(settings.taxRate * 100).toFixed(1)}%)</span>
+                        <span>{formatCurrency(taxAmount)}</span>
                      </div>
                    )}
                    <div className="border-t border-slate-200 pt-3 flex justify-between items-end">
                       <span className="text-slate-600 font-medium">Total Payable</span>
-                      <span className="text-2xl font-bold text-slate-900">${total.toFixed(2)}</span>
+                      <span className="text-2xl font-bold text-slate-900">{formatCurrency(total)}</span>
                    </div>
                 </div>
 
@@ -689,7 +723,7 @@ const POSView: React.FC<{ locationId: string }> = ({ locationId }) => {
                         <div key={item.id} className="flex justify-between text-sm">
                            <span className="text-slate-600 truncate flex-1 pr-4">{item.cartQty}x {item.name}</span>
                            <span className="text-slate-900 font-medium">
-                             ${(getPriceForLocation(item, activeLocationId) * item.cartQty).toFixed(2)}
+                             {formatCurrency(getPriceForLocation(item, activeLocationId) * item.cartQty)}
                            </span>
                         </div>
                       ))}
@@ -731,6 +765,7 @@ const POSView: React.FC<{ locationId: string }> = ({ locationId }) => {
             cartItems={lastTransaction.items}
             subtotal={lastTransaction.subtotal}
             discount={lastTransaction.discount}
+            tax={lastTransaction.tax}
             total={lastTransaction.total}
             customerName={lastTransaction.customer}
           />
@@ -741,6 +776,18 @@ const POSView: React.FC<{ locationId: string }> = ({ locationId }) => {
             isOpen={isShiftModalOpen}
             onClose={() => setIsShiftModalOpen(false)}
             locationId={activeLocationId}
+        />
+
+        {/* Refund Modal */}
+        <RefundModal 
+            isOpen={isRefundModalOpen}
+            onClose={() => setIsRefundModalOpen(false)}
+        />
+        
+        {/* Calculator Widget */}
+        <Calculator 
+            isOpen={isCalculatorOpen}
+            onClose={() => setIsCalculatorOpen(false)}
         />
       </div>
     </div>
