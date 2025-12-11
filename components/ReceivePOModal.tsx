@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { X, PackageCheck, Calendar, Printer } from 'lucide-react';
+import { X, PackageCheck, Calendar, Printer, FileText } from 'lucide-react';
 import { useInventory } from '../context/ShopContext';
 import { PurchaseOrder } from '../types';
 import { printLabels } from '../services/printService';
@@ -14,6 +14,7 @@ interface ReceivePOModalProps {
 const ReceivePOModal: React.FC<ReceivePOModalProps> = ({ isOpen, onClose, purchaseOrder }) => {
   const { locations, receivePurchaseOrder, inventory } = useInventory();
   const [selectedLocationId, setSelectedLocationId] = useState('');
+  const [invoiceNumber, setInvoiceNumber] = useState('');
   const [successMode, setSuccessMode] = useState(false);
   
   // State for batch details per item: { itemId: { batchNumber, expiryDate } }
@@ -33,8 +34,8 @@ const ReceivePOModal: React.FC<ReceivePOModalProps> = ({ isOpen, onClose, purcha
 
   const handleReceive = (e: React.FormEvent) => {
     e.preventDefault();
-    if (selectedLocationId) {
-      receivePurchaseOrder(purchaseOrder.id, selectedLocationId, batchDetails);
+    if (selectedLocationId && invoiceNumber) {
+      receivePurchaseOrder(purchaseOrder.id, selectedLocationId, invoiceNumber, batchDetails);
       setSuccessMode(true);
     }
   };
@@ -56,6 +57,7 @@ const ReceivePOModal: React.FC<ReceivePOModalProps> = ({ isOpen, onClose, purcha
   const handleClose = () => {
       setSuccessMode(false);
       setSelectedLocationId('');
+      setInvoiceNumber('');
       setBatchDetails({});
       onClose();
   };
@@ -73,6 +75,7 @@ const ReceivePOModal: React.FC<ReceivePOModalProps> = ({ isOpen, onClose, purcha
                 <h2 className="text-xl font-bold text-slate-800 mb-2">Stock Received Successfully!</h2>
                 <p className="text-slate-500 mb-6">
                     Inventory has been updated for {locations.find(l => l.id === selectedLocationId)?.name}.
+                    <br/><span className="text-xs text-slate-400">Invoice #{invoiceNumber} Recorded</span>
                 </p>
                 <div className="space-y-3">
                     <button 
@@ -101,7 +104,7 @@ const ReceivePOModal: React.FC<ReceivePOModalProps> = ({ isOpen, onClose, purcha
         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
           <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
             <PackageCheck className="text-green-600" size={20} />
-            Receive Stock
+            Receive Stock / Convert to Invoice
           </h2>
           <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-200">
             <X size={20} />
@@ -122,22 +125,38 @@ const ReceivePOModal: React.FC<ReceivePOModalProps> = ({ isOpen, onClose, purcha
                   </div>
                </div>
             </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">Destination Location</label>
-              <select 
-                value={selectedLocationId} 
-                onChange={e => setSelectedLocationId(e.target.value)}
-                required
-                className="w-full text-sm p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white"
-              >
-                <option value="">-- Select Location --</option>
-                {locations.map(loc => (
-                  <option key={loc.id} value={loc.id}>
-                    {loc.name} ({loc.type})
-                  </option>
-                ))}
-              </select>
+            
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Destination Location</label>
+                  <select 
+                    value={selectedLocationId} 
+                    onChange={e => setSelectedLocationId(e.target.value)}
+                    required
+                    className="w-full text-sm p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white"
+                  >
+                    <option value="">-- Select Location --</option>
+                    {locations.map(loc => (
+                      <option key={loc.id} value={loc.id}>
+                        {loc.name} ({loc.type})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                   <label className="block text-sm font-medium text-slate-700 mb-2">Supplier Invoice #</label>
+                   <div className="relative">
+                      <FileText size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input 
+                         type="text" 
+                         required
+                         value={invoiceNumber}
+                         onChange={e => setInvoiceNumber(e.target.value)}
+                         placeholder="e.g. INV-2023-999"
+                         className="w-full pl-9 pr-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                      />
+                   </div>
+                </div>
             </div>
             
             <div className="space-y-3">
@@ -181,10 +200,10 @@ const ReceivePOModal: React.FC<ReceivePOModalProps> = ({ isOpen, onClose, purcha
           <div className="p-4 border-t border-slate-100 bg-white">
             <button
               type="submit"
-              disabled={!selectedLocationId}
+              disabled={!selectedLocationId || !invoiceNumber}
               className="w-full py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
             >
-              Confirm Receipt & Add to Stock
+              Confirm Invoice & Add Stock
             </button>
           </div>
         </form>

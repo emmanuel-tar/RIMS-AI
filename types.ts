@@ -129,6 +129,7 @@ export interface PurchaseOrder {
   items: { itemId: string; quantity: number; costPrice: number }[];
   totalCost: number;
   notes?: string;
+  invoiceNumber?: string;
 }
 
 export interface Employee {

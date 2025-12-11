@@ -102,6 +102,19 @@ function initializeTables() {
       recordedBy TEXT,
       supplierId TEXT
     )`);
+
+    // Purchase Orders Table
+    db.run(`CREATE TABLE IF NOT EXISTS purchase_orders (
+      id TEXT PRIMARY KEY,
+      supplierId TEXT,
+      status TEXT,
+      dateCreated TEXT,
+      dateExpected TEXT,
+      items TEXT,
+      totalCost REAL,
+      notes TEXT,
+      invoiceNumber TEXT
+    )`);
   });
 }
 
@@ -225,7 +238,36 @@ app.post('/api/sales', (req, res) => {
   });
 });
 
-// Generic GET/POST for other entities
+// Purchase Order Specific Routes
+app.get('/api/purchase_orders', (req, res) => {
+  db.all("SELECT * FROM purchase_orders", [], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    const pos = rows.map(row => ({
+      ...row,
+      items: JSON.parse(row.items || '[]')
+    }));
+    res.json(pos);
+  });
+});
+
+app.post('/api/purchase_orders', (req, res) => {
+  const po = req.body;
+  const stmt = db.prepare(`
+    INSERT OR REPLACE INTO purchase_orders (id, supplierId, status, dateCreated, dateExpected, items, totalCost, notes, invoiceNumber)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  stmt.run(
+    po.id, po.supplierId, po.status, po.dateCreated, po.dateExpected, JSON.stringify(po.items), 
+    po.totalCost, po.notes, po.invoiceNumber,
+    (err) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ message: 'PO saved', id: po.id });
+    }
+  );
+  stmt.finalize();
+});
+
+// Generic GET/POST for simple entities
 ['suppliers', 'employees', 'customers', 'expenses'].forEach(table => {
   app.get(`/api/${table}`, (req, res) => {
     db.all(`SELECT * FROM ${table}`, [], (err, rows) => {

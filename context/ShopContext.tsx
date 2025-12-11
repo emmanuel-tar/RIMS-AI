@@ -44,7 +44,7 @@ interface InventoryContextType {
   addSupplier: (supplier: Omit<Supplier, 'id'>) => void;
   updateSupplier: (id: string, updates: Partial<Supplier>) => void;
   createPurchaseOrder: (po: Omit<PurchaseOrder, 'id' | 'status' | 'dateCreated' | 'totalCost'>) => void;
-  receivePurchaseOrder: (id: string, locationId: string, batchDetails?: Record<string, { batchNumber: string, expiryDate: string }>) => void;
+  receivePurchaseOrder: (id: string, locationId: string, invoiceNumber: string, batchDetails?: Record<string, { batchNumber: string, expiryDate: string }>) => void;
   updatePurchaseOrderStatus: (id: string, status: PurchaseOrder['status']) => void;
 
   // Employees & CRM
@@ -144,13 +144,14 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
           console.log("🔗 Connected to Local Node.js Database");
           
           // Load from Server
-          const [inv, tx, sup, emp, cust, exp] = await Promise.all([
+          const [inv, tx, sup, emp, cust, exp, pos] = await Promise.all([
             fetchFromServer('inventory'),
             fetchFromServer('transactions'),
             fetchFromServer('suppliers'),
             fetchFromServer('employees'),
             fetchFromServer('customers'),
-            fetchFromServer('expenses')
+            fetchFromServer('expenses'),
+            fetchFromServer('purchase_orders')
           ]);
 
           if (inv) setInventory(inv);
@@ -159,6 +160,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
           if (emp) setEmployees(emp);
           if (cust) setCustomers(cust);
           if (exp) setExpenses(exp);
+          if (pos) setPurchaseOrders(pos);
           
           return; // Exit if server loaded
         }
@@ -174,6 +176,9 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       setEmployees(MOCK_EMPLOYEES);
       setCustomers(MOCK_CUSTOMERS);
       setExpenses(MOCK_EXPENSES);
+      
+      const savedPOs = localStorage.getItem('rims_pos');
+      if (savedPOs) setPurchaseOrders(JSON.parse(savedPOs));
     };
 
     initializeData();
@@ -190,6 +195,12 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       localStorage.setItem('rims_inventory', JSON.stringify(inventory));
     }
   }, [inventory, isLocalServerConnected]);
+  
+  useEffect(() => {
+    if (!isLocalServerConnected) {
+      localStorage.setItem('rims_pos', JSON.stringify(purchaseOrders));
+    }
+  }, [purchaseOrders, isLocalServerConnected]);
 
   // --- COMPUTED STATS ---
   const stats = useMemo(() => {
@@ -310,7 +321,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     }
   };
 
-  const adjustStock = (id: string, locationId: string, quantityChange: number, reason: string) => {
+  const adjustStock = (id: string, locationId: string, quantityChange: number, reason: string, batchInfo?: { batchNumber: string, expiryDate: string }) => {
     const timestamp = new Date().toISOString();
     let updatedItem: InventoryItem | null = null;
 
@@ -321,7 +332,8 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         const newDistribution = { ...item.stockDistribution, [locationId]: newLocStock };
         const newTotal = Object.values(newDistribution).reduce((a: number, b: number) => a + b, 0);
 
-        let newBatches = item.batches || [];
+        let newBatches = item.batches ? [...item.batches] : [];
+        // Handle FEFO deduction or Batch Addition
         if (quantityChange < 0 && newBatches.length > 0) {
            let qtyToRemove = Math.abs(quantityChange);
            newBatches.sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime());
@@ -333,6 +345,14 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
              }
              return b;
            }).filter(b => b.quantity > 0);
+        } else if (quantityChange > 0 && batchInfo) {
+           newBatches.push({
+             id: `bat-${Date.now()}-${Math.random().toString(36).substr(2,5)}`,
+             batchNumber: batchInfo.batchNumber,
+             expiryDate: batchInfo.expiryDate,
+             quantity: quantityChange,
+             locationId: locationId
+           });
         }
 
         updatedItem = {
@@ -530,22 +550,49 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   const createPurchaseOrder = (poData: any) => {
-    const newPO = { ...poData, id: `PO-${Date.now()}`, status: 'ORDERED', dateCreated: new Date().toISOString(), totalCost: 0 }; // simplified
+    const newPO = { ...poData, id: `PO-${Date.now()}`, status: 'ORDERED', dateCreated: new Date().toISOString(), totalCost: 0 }; 
+    // totalCost calculation logic should be here or handled in component
+    let calculatedCost = 0;
+    if(poData.items) {
+        calculatedCost = poData.items.reduce((sum: number, i: any) => sum + (i.quantity * i.costPrice), 0);
+    }
+    newPO.totalCost = calculatedCost;
+    
     setPurchaseOrders(prev => [newPO, ...prev]);
+    if (isLocalServerConnected) postToServer('purchase_orders', newPO);
   };
   
-  const receivePurchaseOrder = (id: string, locationId: string, batchDetails?: any) => {
+  const receivePurchaseOrder = (id: string, locationId: string, invoiceNumber: string, batchDetails?: any) => {
       const po = purchaseOrders.find(p => p.id === id);
       if(po) {
+          // 1. Adjust Stock
           po.items.forEach((item: any) => {
-              adjustStock(item.itemId, locationId, item.quantity, `PO Received: ${id}`);
+              const specificBatch = batchDetails?.[item.itemId];
+              adjustStock(
+                  item.itemId, 
+                  locationId, 
+                  item.quantity, 
+                  `PO Received: ${id} | Invoice: ${invoiceNumber}`,
+                  specificBatch 
+              );
           });
-          setPurchaseOrders(prev => prev.map(p => p.id === id ? { ...p, status: 'RECEIVED' } : p));
+          
+          // 2. Update PO Status and add Invoice Number
+          const updatedPO = { ...po, status: 'RECEIVED' as const, invoiceNumber };
+          setPurchaseOrders(prev => prev.map(p => p.id === id ? updatedPO : p));
+          if (isLocalServerConnected) postToServer('purchase_orders', updatedPO);
       }
   };
 
   const updatePurchaseOrderStatus = (id: string, status: any) => {
-      setPurchaseOrders(prev => prev.map(p => p.id === id ? { ...p, status } : p));
+      setPurchaseOrders(prev => prev.map(p => {
+          if (p.id === id) {
+              const updated = { ...p, status };
+              if (isLocalServerConnected) postToServer('purchase_orders', updated);
+              return updated;
+          }
+          return p;
+      }));
   };
 
   const exportData = () => {
